@@ -81,7 +81,7 @@
       },
       "custom_schedule_conflict": {
         "title": "Overlap detected",
-        "description": "The rule '{name}' overlaps with at least one existing rule ({conflicts}) on at least one day within the next 2 years. Which one should win on those days? You can fine-tune the exact order any time afterwards using move up/down in the list.",
+        "description": "The rule {name} overlaps with at least one existing rule ({conflicts}) on at least one day within the next 2 years. Which one should win on those days? You can fine-tune the exact order any time afterwards using move up/down in the list.",
         "data": {
           "priority_choice": "Priority"
         }

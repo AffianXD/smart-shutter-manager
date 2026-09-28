@@ -81,7 +81,7 @@
       },
       "custom_schedule_conflict": {
         "title": "Überschneidung erkannt",
-        "description": "Die Regel '{name}' überschneidet sich mit mindestens einer bestehenden Regel ({conflicts}) an mindestens einem Tag in den nächsten 2 Jahren. Wer soll an diesen Tagen gewinnen? Die genaue Reihenfolge kannst du danach jederzeit über Hoch-/Runterschieben in der Liste feinjustieren.",
+        "description": "Die Regel {name} überschneidet sich mit mindestens einer bestehenden Regel ({conflicts}) an mindestens einem Tag in den nächsten 2 Jahren. Wer soll an diesen Tagen gewinnen? Die genaue Reihenfolge kannst du danach jederzeit über Hoch-/Runterschieben in der Liste feinjustieren.",
         "data": {
           "priority_choice": "Priorität"
         }
