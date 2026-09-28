@@ -1,0 +1,13 @@
+{
+  "domain": "smart_shutter",
+  "name": "Smart Shutter Manager",
+  "version": "0.21.0",
+  "config_flow": true,
+  "dependencies": ["http", "frontend", "panel_custom", "websocket_api"],
+  "documentation": "https://github.com/AffianXD/smart-shutter-manager",
+  "issue_tracker": "https://github.com/AffianXD/smart-shutter-manager/issues",
+  "requirements": [],
+  "codeowners": ["@AffianXD"],
+  "iot_class": "calculated",
+  "integration_type": "hub"
+}

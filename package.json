@@ -1,0 +1,11 @@
+{
+  "name": "smart-shutter-manager-tests",
+  "private": true,
+  "scripts": {
+    "test:card": "node tests/run_test.js",
+    "check:card": "node --check custom_components/smart_shutter/www/smart-shutter-card.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

@@ -1,0 +1,451 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select shutters",
+        "description": "The following shutters (cover entities with open/close/stop) were found and are all pre-selected. Uncheck anything the Smart Shutter Manager should NOT manage.",
+        "data": {
+          "cover_selection": "Shutters"
+        }
+      },
+      "names": {
+        "title": "Assign names",
+        "description": "Optionally give individual display names to the selected shutters."
+      }
+    },
+    "error": {
+      "no_selection": "Please select at least one shutter."
+    },
+    "abort": {
+      "no_covers_found": "No matching cover entities were found (open/close/stop required).",
+      "already_configured": "Smart Shutter Manager is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart Shutter Manager – Settings",
+        "menu_options": {
+          "basic_settings": "Basic settings",
+          "custom_schedules_menu": "Manage custom schedules",
+          "finish": "Save & close",
+          "external_triggers_menu": "Manage external triggers",
+          "rename_shutters": "Rename shutters"
+        }
+      },
+      "basic_settings": {
+        "title": "Global settings",
+        "description": "All fields are optional.",
+        "data": {
+          "holiday_entity": "Holiday entity (binary_sensor/input_boolean/calendar - 'on' = holiday active)",
+          "holiday_weekdays": "Holiday profile applies on these weekdays (default: Mon-Fri, weekends otherwise still use the normal weekend profile)",
+          "stagger_delay_ms": "Staggered dispatch: delay in ms between each shutter for multi-shutter actions (0 = off, RF collision protection)",
+          "frost_entity": "Frost protection entity (binary_sensor/input_boolean - 'on' = frost active, no movement)",
+          "notify_service": "Notify service for notifications (e.g. notify.notify), empty = off",
+          "pre_notify_lead_minutes": "Pre-warning before closing (minutes, 0 = off)",
+          "postpone_options_minutes": "Postpone options in minutes, comma-separated (e.g. 5,10,15)",
+          "catch_up_window_minutes": "Catch-up window after restart (minutes, 0 = no catch-up)",
+          "notify_text_moved": "Template: movement notification (variables: names, count, action, trigger)",
+          "notify_text_frost": "Template: frost protection notification (variables: names, count)",
+          "notify_text_preclose": "Template: pre-warning before closing (variables: name, time, action)",
+          "notification_max_age_minutes": "Ignore pre-warning buttons after how many minutes? (0 = never ignore)"
+        }
+      },
+      "custom_schedules_menu": {
+        "title": "Custom schedules",
+        "description": "Recurring time exceptions, defined once and applied to all shutters (can still be overridden locally per shutter). List order = priority on overlap - the first matching rule wins.",
+        "data": {
+          "choice": "Select rule"
+        }
+      },
+      "custom_schedule_actions": {
+        "title": "{name} (priority {position}/{total})",
+        "description": "What would you like to do with this rule?",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "custom_schedule_edit": {
+        "title": "Custom schedule: {name}",
+        "description": "Custom schedules only support fixed times (no sunrise/sunset). Leave blank to leave that action (open/close) unaffected by this rule.",
+        "data": {
+          "name": "Name",
+          "weekdays": "Weekdays",
+          "interval_weeks": "Every how many weeks? (1 = every week)",
+          "reference_date": "Reference date (starting point for week counting)",
+          "end_date": "End date (optional, rule stops applying after this date)",
+          "open_time": "Open time (optional)",
+          "close_time": "Close time (optional)",
+          "delete": "Delete this rule"
+        }
+      },
+      "custom_schedule_conflict": {
+        "title": "Overlap detected",
+        "description": "The rule '{name}' overlaps with at least one existing rule ({conflicts}) on at least one day within the next 2 years. Which one should win on those days? You can fine-tune the exact order any time afterwards using move up/down in the list.",
+        "data": {
+          "priority_choice": "Priority"
+        }
+      },
+      "external_triggers_menu": {
+        "title": "External triggers",
+        "description": "Named rules whose target time is set via service (smart_shutter.set_external_trigger) from an external automation - e.g. to pass an alarm-clock time to a specific shutter. An active trigger always wins over profiles/custom schedules until its time is reached - no separate priority list is needed for this.",
+        "data": {
+          "choice": "Select trigger"
+        }
+      },
+      "external_trigger_edit": {
+        "title": "External trigger: {name}",
+        "description": "The name is used as a reference in the smart_shutter.set_external_trigger service (case-sensitive).",
+        "data": {
+          "name": "Name",
+          "entity_id": "Shutter",
+          "action": "Action",
+          "delete": "Delete this trigger"
+        }
+      },
+      "rename_shutters": {
+        "title": "Rename shutters",
+        "description": "Leave blank to use the automatically detected name."
+      }
+    },
+    "error": {
+      "custom_schedule_no_weekdays": "Please select at least one weekday.",
+      "custom_schedule_no_time": "Please provide at least one time (open or close).",
+      "external_trigger_no_name": "Please enter a name.",
+      "external_trigger_duplicate_name": "This name is already used by another external trigger.",
+      "external_trigger_no_entity": "Please select a shutter."
+    }
+  },
+  "entity": {
+    "switch": {
+      "automation_open": {
+        "name": "Automation open (individual)"
+      },
+      "automation_close": {
+        "name": "Automation close (individual)"
+      },
+      "global_automation_open": {
+        "name": "Automation open (Global)"
+      },
+      "global_automation_close": {
+        "name": "Automation close (Global)"
+      }
+    },
+    "select": {
+      "open_source": {
+        "name": "Open source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "close_source": {
+        "name": "Close source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "global_open_type": {
+        "name": "Global open type",
+        "state": {
+          "time": "Time",
+          "sunrise": "Sunrise",
+          "sunset": "Sunset"
+        }
+      },
+      "global_close_type": {
+        "name": "Global close type",
+        "state": {
+          "time": "Time",
+          "sunrise": "Sunrise",
+          "sunset": "Sunset"
+        }
+      },
+      "local_open_type": {
+        "name": "Open type",
+        "state": {
+          "time": "Time",
+          "sunrise": "Sunrise",
+          "sunset": "Sunset"
+        }
+      },
+      "local_close_type": {
+        "name": "Close type",
+        "state": {
+          "time": "Time",
+          "sunrise": "Sunrise",
+          "sunset": "Sunset"
+        }
+      },
+      "open_weekday_time_source": {
+        "name": "Open weekday source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "close_weekday_time_source": {
+        "name": "Close weekday source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "open_weekend_time_source": {
+        "name": "Open weekend source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "close_weekend_time_source": {
+        "name": "Close weekend source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "open_holiday_time_source": {
+        "name": "Open holiday source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "close_holiday_time_source": {
+        "name": "Close holiday source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "open_custom_time_source": {
+        "name": "Open source ({profile_name})",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "close_custom_time_source": {
+        "name": "Close source ({profile_name})",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "open_position_source": {
+        "name": "Open position source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      },
+      "close_position_source": {
+        "name": "Close position source",
+        "state": {
+          "global": "Global",
+          "local": "Individual"
+        }
+      }
+    },
+    "number": {
+      "global_open_sun_offset": {
+        "name": "Global open sun offset"
+      },
+      "global_close_sun_offset": {
+        "name": "Global close sun offset"
+      },
+      "local_open_sun_offset": {
+        "name": "Open sun offset"
+      },
+      "local_close_sun_offset": {
+        "name": "Close sun offset"
+      },
+      "global_open_position": {
+        "name": "Global open target position"
+      },
+      "global_close_position": {
+        "name": "Global close target position"
+      },
+      "local_open_position": {
+        "name": "Open target position"
+      },
+      "local_close_position": {
+        "name": "Close target position"
+      }
+    },
+    "time": {
+      "global_open_weekday": {
+        "name": "Global open weekday"
+      },
+      "global_open_weekend": {
+        "name": "Global open weekend"
+      },
+      "global_open_holiday": {
+        "name": "Global open holiday"
+      },
+      "global_close_weekday": {
+        "name": "Global close weekday"
+      },
+      "global_close_weekend": {
+        "name": "Global close weekend"
+      },
+      "global_close_holiday": {
+        "name": "Global close holiday"
+      },
+      "local_open_weekday": {
+        "name": "Open weekday"
+      },
+      "local_open_weekend": {
+        "name": "Open weekend"
+      },
+      "local_open_holiday": {
+        "name": "Open holiday"
+      },
+      "local_close_weekday": {
+        "name": "Close weekday"
+      },
+      "local_close_weekend": {
+        "name": "Close weekend"
+      },
+      "local_close_holiday": {
+        "name": "Close holiday"
+      },
+      "local_open_custom": {
+        "name": "Open ({profile_name})"
+      },
+      "local_close_custom": {
+        "name": "Close ({profile_name})"
+      }
+    },
+    "sensor": {
+      "active_profile": {
+        "name": "Active profile",
+        "state": {"weekday": "Weekday", "weekend": "Weekend", "holiday": "Holiday"}
+      },
+      "next_action": {
+        "name": "Next action"
+      },
+      "global_active_profile": {
+        "name": "Global active profile",
+        "state": {"weekday": "Weekday", "weekend": "Weekend", "holiday": "Holiday"}
+      },
+      "global_next_action": {
+        "name": "Global next action"
+      }
+    }
+  },
+  "services": {
+    "skip_action": {
+      "name": "Skip shutter action",
+      "description": "Skip the next scheduled opening or closing of one shutter.",
+      "fields": {
+        "entity_id": {
+          "name": "Shutter",
+          "description": "The shutter's cover entity."
+        },
+        "action": {
+          "name": "Action",
+          "description": "Which action to skip."
+        },
+        "source": {
+          "name": "Source",
+          "description": "Optional label shown with the override in the dashboard card."
+        }
+      }
+    },
+    "postpone_action": {
+      "name": "Postpone shutter action",
+      "description": "Postpone the next scheduled opening or closing of one shutter.",
+      "fields": {
+        "entity_id": {
+          "name": "Shutter",
+          "description": "The shutter's cover entity."
+        },
+        "action": {
+          "name": "Action",
+          "description": "Which action to postpone."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "How many minutes to postpone the action."
+        },
+        "source": {
+          "name": "Source",
+          "description": "Optional label shown with the override in the dashboard card."
+        }
+      }
+    },
+    "clear_override": {
+      "name": "Clear action override",
+      "description": "Clear an active skip or postpone override and restore the regular schedule.",
+      "fields": {
+        "entity_id": {
+          "name": "Shutter",
+          "description": "The shutter's cover entity."
+        },
+        "action": {
+          "name": "Action",
+          "description": "Which action's override to clear."
+        }
+      }
+    },
+    "clear_manual_pause": {
+      "name": "Clear manual pause",
+      "description": "End a shutter's automatic pause after a manually detected movement.",
+      "fields": {
+        "entity_id": {
+          "name": "Shutter",
+          "description": "The shutter's cover entity."
+        }
+      }
+    },
+    "set_external_trigger": {
+      "name": "Set external trigger",
+      "description": "Set the next target time for a named external trigger. An active trigger takes priority over regular and custom schedules until its time is reached.",
+      "fields": {
+        "name": {
+          "name": "Trigger name",
+          "description": "The configured trigger name (case-sensitive)."
+        },
+        "time": {
+          "name": "Time",
+          "description": "Target time as text (for example 07:15). A future time applies today; otherwise it applies tomorrow. Text also permits Home Assistant templates."
+        }
+      }
+    }
+  },
+  "selector": {
+    "schedule_action": {
+      "options": {
+        "edit": "Edit", "move_up": "↑ Higher priority", "move_down": "↓ Lower priority",
+        "delete": "Delete", "back": "« Back to list"
+      }
+    },
+    "schedule_priority": {
+      "options": {
+        "new_wins": "This new or changed rule wins on overlapping days",
+        "existing_wins": "Existing rules win on overlapping days"
+      }
+    },
+    "trigger_action": { "options": { "open": "Open", "close": "Close" } },
+    "custom_weekday": {
+      "options": {
+        "mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
+        "fri": "Friday", "sat": "Saturday", "sun": "Sunday"
+      }
+    },
+    "weekday": {
+      "options": {
+        "0": "Monday",
+        "1": "Tuesday",
+        "2": "Wednesday",
+        "3": "Thursday",
+        "4": "Friday",
+        "5": "Saturday",
+        "6": "Sunday"
+      }
+    }
+  }
+}

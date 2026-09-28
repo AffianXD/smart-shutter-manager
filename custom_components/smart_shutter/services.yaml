@@ -1,0 +1,128 @@
+skip_action:
+  name: Skip shutter action
+  description: Skip the next scheduled opening or closing of one shutter.
+  fields:
+    entity_id:
+      name: Shutter
+      description: The shutter's cover entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    action:
+      name: Action
+      description: Which action to skip.
+      required: true
+      default: close
+      selector:
+        select:
+          options:
+            - label: Open
+              value: open
+            - label: Close
+              value: close
+    source:
+      name: Source
+      description: Optional label shown with the override in the dashboard card.
+      required: false
+      selector:
+        text:
+
+postpone_action:
+  name: Postpone shutter action
+  description: Postpone the next scheduled opening or closing of one shutter.
+  fields:
+    entity_id:
+      name: Shutter
+      description: The shutter's cover entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    action:
+      name: Action
+      description: Which action to postpone.
+      required: true
+      default: close
+      selector:
+        select:
+          options:
+            - label: Open
+              value: open
+            - label: Close
+              value: close
+    minutes:
+      name: Minutes
+      description: How many minutes to postpone the action.
+      required: true
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 1440
+          mode: box
+          unit_of_measurement: min
+    source:
+      name: Source
+      description: Optional label shown with the override in the dashboard card.
+      required: false
+      selector:
+        text:
+
+clear_override:
+  name: Clear action override
+  description: Clear an active skip or postpone override and restore the regular schedule.
+  fields:
+    entity_id:
+      name: Shutter
+      description: The shutter's cover entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    action:
+      name: Action
+      description: Which action's override to clear.
+      required: true
+      default: close
+      selector:
+        select:
+          options:
+            - label: Open
+              value: open
+            - label: Close
+              value: close
+
+clear_manual_pause:
+  name: Clear manual pause
+  description: End a shutter's automatic pause after a manually detected movement.
+  fields:
+    entity_id:
+      name: Shutter
+      description: The shutter's cover entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+
+set_external_trigger:
+  name: Set external trigger
+  description: >-
+    Set the next target time for a named external trigger. An active trigger
+    takes priority over regular and custom schedules until its time is reached.
+  fields:
+    name:
+      name: Trigger name
+      description: The configured trigger name (case-sensitive).
+      required: true
+      selector:
+        text:
+    time:
+      name: Time
+      description: >-
+        Target time as text (for example 07:15). A future time applies today;
+        otherwise it applies tomorrow. Text also permits Home Assistant templates.
+      required: true
+      example: "07:15"
+      selector:
+        text:

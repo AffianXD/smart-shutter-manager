@@ -1,0 +1,451 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Rollläden auswählen",
+        "description": "Es wurden folgende Rollläden (cover-Entitäten mit Öffnen/Schließen/Stopp) gefunden und sind bereits alle vorausgewählt. Hake ab, was der Smart Shutter Manager NICHT verwalten soll.",
+        "data": {
+          "cover_selection": "Rollläden"
+        }
+      },
+      "names": {
+        "title": "Namen vergeben",
+        "description": "Vergib optional individuelle Anzeigenamen für die ausgewählten Rollläden."
+      }
+    },
+    "error": {
+      "no_selection": "Bitte mindestens einen Rollladen auswählen."
+    },
+    "abort": {
+      "no_covers_found": "Es wurden keine passenden cover-Entitäten gefunden (open/close/stop erforderlich).",
+      "already_configured": "Smart Shutter Manager ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart Shutter Manager – Einstellungen",
+        "menu_options": {
+          "basic_settings": "Basis-Einstellungen",
+          "custom_schedules_menu": "Custom-Profile verwalten",
+          "finish": "Speichern & schließen",
+          "external_triggers_menu": "Externe Trigger verwalten",
+          "rename_shutters": "Rollläden umbenennen"
+        }
+      },
+      "basic_settings": {
+        "title": "Globale Einstellungen",
+        "description": "Alle Felder sind optional.",
+        "data": {
+          "holiday_entity": "Ferien-Entity (binary_sensor/input_boolean/calendar - 'an' = Ferien aktiv)",
+          "holiday_weekdays": "Ferien gilt an diesen Wochentagen (Default: Mo-Fr, am Wochenende gilt sonst weiterhin normal Wochenende)",
+          "stagger_delay_ms": "Gestaffelte Befehlsausgabe: Verzögerung in ms zwischen jedem Rollladen bei Mehrfachaktionen (0 = aus, RF-Kollisionsschutz)",
+          "frost_entity": "Frostschutz-Entity (binary_sensor/input_boolean - 'an' = Frost aktiv, keine Bewegung)",
+          "notify_service": "Notify-Service für Benachrichtigungen (z.B. notify.notify), leer = aus",
+          "pre_notify_lead_minutes": "Vorwarnung vor dem Schließen (Minuten, 0 = aus)",
+          "postpone_options_minutes": "Verschieben-Optionen in Minuten, kommagetrennt (z.B. 5,10,15)",
+          "catch_up_window_minutes": "Nachhol-Fenster nach Neustart (Minuten, 0 = kein Nachholen)",
+          "notify_text_moved": "Template: Bewegungs-Benachrichtigung (Variablen: names, count, action, trigger)",
+          "notify_text_frost": "Template: Frostschutz-Benachrichtigung (Variablen: names, count)",
+          "notify_text_preclose": "Template: Vorwarnung vorm Schließen (Variablen: name, time, action)",
+          "notification_max_age_minutes": "Vorwarnung-Buttons ignorieren nach wie vielen Minuten? (0 = nie ignorieren)"
+        }
+      },
+      "custom_schedules_menu": {
+        "title": "Custom-Profile",
+        "description": "Wiederkehrende Zeit-Ausnahmen, die einmalig angelegt werden und für alle Rollläden gelten (pro Rollladen aber lokal überschreibbar). Reihenfolge = Priorität bei Überschneidungen - die zuerst gelistete Regel gewinnt.",
+        "data": {
+          "choice": "Regel auswählen"
+        }
+      },
+      "custom_schedule_actions": {
+        "title": "{name} (Priorität {position}/{total})",
+        "description": "Was möchtest du mit dieser Regel tun?",
+        "data": {
+          "action": "Aktion"
+        }
+      },
+      "custom_schedule_edit": {
+        "title": "Custom-Profil: {name}",
+        "description": "Custom-Profile unterstützen nur feste Uhrzeiten (kein Sonnenauf-/-untergang). Leer lassen = diese Aktion (Öffnen/Schließen) bleibt von dieser Regel unberührt.",
+        "data": {
+          "name": "Name",
+          "weekdays": "Wochentage",
+          "interval_weeks": "Alle wie viele Wochen? (1 = jede Woche)",
+          "reference_date": "Referenzdatum (Startpunkt für die Wochenzählung)",
+          "end_date": "Ablaufdatum (optional, danach nicht mehr aktiv)",
+          "open_time": "Öffnen-Uhrzeit (optional)",
+          "close_time": "Schließen-Uhrzeit (optional)",
+          "delete": "Diese Regel löschen"
+        }
+      },
+      "custom_schedule_conflict": {
+        "title": "Überschneidung erkannt",
+        "description": "Die Regel '{name}' überschneidet sich mit mindestens einer bestehenden Regel ({conflicts}) an mindestens einem Tag in den nächsten 2 Jahren. Wer soll an diesen Tagen gewinnen? Die genaue Reihenfolge kannst du danach jederzeit über Hoch-/Runterschieben in der Liste feinjustieren.",
+        "data": {
+          "priority_choice": "Priorität"
+        }
+      },
+      "external_triggers_menu": {
+        "title": "Externe Trigger",
+        "description": "Benannte Regeln, deren Zielzeit per Service (smart_shutter.set_external_trigger) aus einer externen Automation gesetzt wird - z.B. um eine Wecker-Uhrzeit an einen bestimmten Rollladen weiterzugeben. Ein aktiver Trigger gewinnt immer gegenüber Profilen/Custom-Profilen, bis sein Zeitpunkt erreicht ist - eine zusätzliche Prioritäts-Liste ist dafür nicht nötig.",
+        "data": {
+          "choice": "Trigger auswählen"
+        }
+      },
+      "external_trigger_edit": {
+        "title": "Externer Trigger: {name}",
+        "description": "Der Name wird im Service smart_shutter.set_external_trigger als Referenz benutzt (Groß-/Kleinschreibung beachten).",
+        "data": {
+          "name": "Name",
+          "entity_id": "Rollladen",
+          "action": "Aktion",
+          "delete": "Diesen Trigger löschen"
+        }
+      },
+      "rename_shutters": {
+        "title": "Rollläden umbenennen",
+        "description": "Leer lassen, um den automatisch ermittelten Namen zu verwenden."
+      }
+    },
+    "error": {
+      "custom_schedule_no_weekdays": "Bitte mindestens einen Wochentag auswählen.",
+      "custom_schedule_no_time": "Bitte mindestens eine Uhrzeit (Öffnen oder Schließen) angeben.",
+      "external_trigger_no_name": "Bitte einen Namen vergeben.",
+      "external_trigger_duplicate_name": "Dieser Name wird bereits von einem anderen Externen Trigger verwendet.",
+      "external_trigger_no_entity": "Bitte einen Rollladen auswählen."
+    }
+  },
+  "entity": {
+    "switch": {
+      "automation_open": {
+        "name": "Automatik Öffnen (individuell)"
+      },
+      "automation_close": {
+        "name": "Automatik Schließen (individuell)"
+      },
+      "global_automation_open": {
+        "name": "Automatik Öffnen Global"
+      },
+      "global_automation_close": {
+        "name": "Automatik Schließen Global"
+      }
+    },
+    "select": {
+      "open_source": {
+        "name": "Öffnungsquelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_source": {
+        "name": "Schließquelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "global_open_type": {
+        "name": "Global Öffnungsart",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "global_close_type": {
+        "name": "Global Schließart",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "local_open_type": {
+        "name": "Öffnungsart",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "local_close_type": {
+        "name": "Schließart",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "open_weekday_time_source": {
+        "name": "Öffnen Arbeitstage Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_weekday_time_source": {
+        "name": "Schließen Arbeitstage Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_weekend_time_source": {
+        "name": "Öffnen Wochenende Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_weekend_time_source": {
+        "name": "Schließen Wochenende Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_holiday_time_source": {
+        "name": "Öffnen Ferien Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_holiday_time_source": {
+        "name": "Schließen Ferien Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_custom_time_source": {
+        "name": "Öffnen Quelle ({profile_name})",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_custom_time_source": {
+        "name": "Schließen Quelle ({profile_name})",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_position_source": {
+        "name": "Öffnen Positions-Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_position_source": {
+        "name": "Schließen Positions-Quelle",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      }
+    },
+    "number": {
+      "global_open_sun_offset": {
+        "name": "Global Öffnen Sonnenversatz"
+      },
+      "global_close_sun_offset": {
+        "name": "Global Schließen Sonnenversatz"
+      },
+      "local_open_sun_offset": {
+        "name": "Öffnen Sonnenversatz"
+      },
+      "local_close_sun_offset": {
+        "name": "Schließen Sonnenversatz"
+      },
+      "global_open_position": {
+        "name": "Global Öffnen Zielposition"
+      },
+      "global_close_position": {
+        "name": "Global Schließen Zielposition"
+      },
+      "local_open_position": {
+        "name": "Öffnen Zielposition"
+      },
+      "local_close_position": {
+        "name": "Schließen Zielposition"
+      }
+    },
+    "time": {
+      "global_open_weekday": {
+        "name": "Global Öffnen Arbeitstage"
+      },
+      "global_open_weekend": {
+        "name": "Global Öffnen Wochenende"
+      },
+      "global_open_holiday": {
+        "name": "Global Öffnen Ferien"
+      },
+      "global_close_weekday": {
+        "name": "Global Schließen Arbeitstage"
+      },
+      "global_close_weekend": {
+        "name": "Global Schließen Wochenende"
+      },
+      "global_close_holiday": {
+        "name": "Global Schließen Ferien"
+      },
+      "local_open_weekday": {
+        "name": "Öffnen Arbeitstage"
+      },
+      "local_open_weekend": {
+        "name": "Öffnen Wochenende"
+      },
+      "local_open_holiday": {
+        "name": "Öffnen Ferien"
+      },
+      "local_close_weekday": {
+        "name": "Schließen Arbeitstage"
+      },
+      "local_close_weekend": {
+        "name": "Schließen Wochenende"
+      },
+      "local_close_holiday": {
+        "name": "Schließen Ferien"
+      },
+      "local_open_custom": {
+        "name": "Öffnen ({profile_name})"
+      },
+      "local_close_custom": {
+        "name": "Schließen ({profile_name})"
+      }
+    },
+    "sensor": {
+      "active_profile": {
+        "name": "Aktives Profil",
+        "state": {"weekday": "Arbeitstag", "weekend": "Wochenende", "holiday": "Ferien"}
+      },
+      "next_action": {
+        "name": "Nächste Aktion"
+      },
+      "global_active_profile": {
+        "name": "Global Aktives Profil",
+        "state": {"weekday": "Arbeitstag", "weekend": "Wochenende", "holiday": "Ferien"}
+      },
+      "global_next_action": {
+        "name": "Global Nächste Aktion"
+      }
+    }
+  },
+  "services": {
+    "skip_action": {
+      "name": "Rollladen-Aktion überspringen",
+      "description": "Überspringt das nächste geplante Öffnen oder Schließen eines Rollladens.",
+      "fields": {
+        "entity_id": {
+          "name": "Rollladen",
+          "description": "Die cover-Entität des Rollladens."
+        },
+        "action": {
+          "name": "Aktion",
+          "description": "Welche Aktion übersprungen werden soll."
+        },
+        "source": {
+          "name": "Quelle",
+          "description": "Optionale Beschriftung des Overrides in der Dashboard-Karte."
+        }
+      }
+    },
+    "postpone_action": {
+      "name": "Rollladen-Aktion verschieben",
+      "description": "Verschiebt das nächste geplante Öffnen oder Schließen eines Rollladens.",
+      "fields": {
+        "entity_id": {
+          "name": "Rollladen",
+          "description": "Die cover-Entität des Rollladens."
+        },
+        "action": {
+          "name": "Aktion",
+          "description": "Welche Aktion verschoben werden soll."
+        },
+        "minutes": {
+          "name": "Minuten",
+          "description": "Um wie viele Minuten die Aktion verschoben wird."
+        },
+        "source": {
+          "name": "Quelle",
+          "description": "Optionale Beschriftung des Overrides in der Dashboard-Karte."
+        }
+      }
+    },
+    "clear_override": {
+      "name": "Aktions-Override aufheben",
+      "description": "Hebt ein aktives Überspringen oder Verschieben auf und stellt den normalen Zeitplan wieder her.",
+      "fields": {
+        "entity_id": {
+          "name": "Rollladen",
+          "description": "Die cover-Entität des Rollladens."
+        },
+        "action": {
+          "name": "Aktion",
+          "description": "Für welche Aktion der Override aufgehoben wird."
+        }
+      }
+    },
+    "clear_manual_pause": {
+      "name": "Manuelle Pause aufheben",
+      "description": "Beendet die automatische Pause nach einer erkannten manuellen Bewegung.",
+      "fields": {
+        "entity_id": {
+          "name": "Rollladen",
+          "description": "Die cover-Entität des Rollladens."
+        }
+      }
+    },
+    "set_external_trigger": {
+      "name": "Externen Trigger setzen",
+      "description": "Setzt die nächste Zielzeit eines benannten externen Triggers. Bis dahin hat er Vorrang vor regulären und eigenen Zeitplänen.",
+      "fields": {
+        "name": {
+          "name": "Triggername",
+          "description": "Der konfigurierte Name des Triggers (Groß- und Kleinschreibung beachten)."
+        },
+        "time": {
+          "name": "Uhrzeit",
+          "description": "Zielzeit als Text (z. B. 07:15). Eine zukünftige Zeit gilt heute, sonst morgen. Text erlaubt auch Home-Assistant-Templates."
+        }
+      }
+    }
+  },
+  "selector": {
+    "schedule_action": {
+      "options": {
+        "edit": "Bearbeiten", "move_up": "↑ Höhere Priorität", "move_down": "↓ Niedrigere Priorität",
+        "delete": "Löschen", "back": "« Zurück zur Liste"
+      }
+    },
+    "schedule_priority": {
+      "options": {
+        "new_wins": "Diese neue oder geänderte Regel gewinnt an Überschneidungstagen",
+        "existing_wins": "Bestehende Regeln gewinnen an Überschneidungstagen"
+      }
+    },
+    "trigger_action": { "options": { "open": "Öffnen", "close": "Schließen" } },
+    "custom_weekday": {
+      "options": {
+        "mon": "Montag", "tue": "Dienstag", "wed": "Mittwoch", "thu": "Donnerstag",
+        "fri": "Freitag", "sat": "Samstag", "sun": "Sonntag"
+      }
+    },
+    "weekday": {
+      "options": {
+        "0": "Montag",
+        "1": "Dienstag",
+        "2": "Mittwoch",
+        "3": "Donnerstag",
+        "4": "Freitag",
+        "5": "Samstag",
+        "6": "Sonntag"
+      }
+    }
+  }
+}
