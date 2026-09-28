@@ -5,6 +5,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_restore_cache
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.core import State
 
 from custom_components.smart_shutter import async_migrate_entry
@@ -49,6 +50,12 @@ async def test_both_languages_load_select_states_and_service_labels(hass):
         selector_labels = await async_get_translations(
             hass, language, "selector", integrations={"smart_shutter"}
         )
+        device_labels = await async_get_translations(
+            hass, language, "device", integrations={"smart_shutter"}
+        )
+        assert device_labels["component.smart_shutter.device.managed_shutter.name"] == (
+            "{name} Shutter" if language == "en" else "{name} Rollladen"
+        )
         assert entity_labels["component.smart_shutter.entity.select.open_source.state.local"] == expected
         assert entity_labels["component.smart_shutter.entity.sensor.active_profile.state.weekday"] == ("Weekday" if language == "en" else "Arbeitstag")
         assert "component.smart_shutter.services.skip_action.name" in service_labels
@@ -58,6 +65,7 @@ async def test_both_languages_load_select_states_and_service_labels(hass):
 
 @pytest.mark.usefixtures("enable_custom_integrations")
 async def test_fresh_entry_registers_entities_services_and_websocket(hass, hass_client):
+    hass.config.language = "de"
     hass.states.async_set(
         "cover.kitchen",
         "closed",
@@ -85,6 +93,11 @@ async def test_fresh_entry_registers_entities_services_and_websocket(hass, hass_
     )
     assert profile_entity_id is not None
     assert hass.states.get(profile_entity_id) is not None
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, f"{DOMAIN}_cover.kitchen"), entry.entry_id
+    )
+    assert device is not None
+    assert device.name == "Kitchen Rollladen"
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")

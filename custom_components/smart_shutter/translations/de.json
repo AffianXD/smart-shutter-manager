@@ -116,6 +116,11 @@
       "external_trigger_no_entity": "Bitte einen Rollladen auswählen."
     }
   },
+  "device": {
+    "managed_shutter": {
+      "name": "{name} Rollladen"
+    }
+  },
   "entity": {
     "switch": {
       "automation_open": {

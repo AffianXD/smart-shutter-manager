@@ -116,6 +116,11 @@
       "external_trigger_no_entity": "Please select a shutter."
     }
   },
+  "device": {
+    "managed_shutter": {
+      "name": "{name} Shutter"
+    }
+  },
   "entity": {
     "switch": {
       "automation_open": {

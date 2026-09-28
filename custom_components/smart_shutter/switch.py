@@ -1,6 +1,6 @@
 """Switch Platform: Automatic status per shutter + global master switch.
 
-Creates a separate HA device for each managed shutter "<Name> Shutter" (Section 5 of the requirements document) with one automatic switch for opening AND one for closing (separated since v0.6.2, on user request - previously there was only one common switch for both directions).
+Creates a separate HA device for each managed shutter with a translated name (Section 5 of the requirements document) with one automatic switch for opening AND one for closing (separated since v0.6.2, on user request - previously there was only one common switch for both directions).
 
 In addition (on user request): two global master switches (opening/closing separated) on the device "Smart Shutter Manager – Global", which can deactivate all shutters at once for the respective direction without having to access each individually.
 
@@ -74,7 +74,8 @@ class ShutterAutomationSwitch(SwitchEntity, RestoreEntity):
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, shutter.device_id)},
-            name=f"{shutter.name} Shutter",
+            translation_key="managed_shutter",
+            translation_placeholders={"name": shutter.name},
             manufacturer="Smart Shutter Manager",
             model="Managed Shutter",
             suggested_area=shutter.area,
