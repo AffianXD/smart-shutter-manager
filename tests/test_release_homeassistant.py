@@ -80,11 +80,11 @@ async def test_fresh_entry_registers_entities_services_and_websocket(hass, hass_
     response = await client.get("/smart_shutter_frontend/smart-shutter-card.js")
     assert response.status == 200
     assert "smart-shutter-card" in await response.text()
-    assert any(
-        state.entity_id.startswith("sensor.kitchen_")
-        and state.entity_id.endswith("_active_profile")
-        for state in hass.states.async_all("sensor")
+    profile_entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{DOMAIN}_cover.kitchen_active_profile"
     )
+    assert profile_entity_id is not None
+    assert hass.states.get(profile_entity_id) is not None
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
