@@ -17,3 +17,6 @@ playwright-report/
 *.log
 docs/
 old_versions/
+.github/agents/
+.github/hooks/
+.github/skills/
