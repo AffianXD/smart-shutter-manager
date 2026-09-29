@@ -1176,17 +1176,30 @@
       let canClose = false;
       let canStop = false;
       for (const coverEntityId of coverEntityIds || []) {
-        const st = this._state(coverEntityId);
-        const position = st && st.attributes ? st.attributes.current_position : undefined;
-        const isFullyOpen = position !== undefined ? position === 100 : st && st.state === "open";
-        const isFullyClosed = position !== undefined ? position === 0 : st && st.state === "closed";
-        const isOpening = st && st.state === "opening";
-        const isClosing = st && st.state === "closing";
+        const { isFullyOpen, isFullyClosed, isOpening, isClosing } = this._coverMotionState(coverEntityId);
         if (!(isFullyOpen || isOpening)) canOpen = true;
         if (!(isFullyClosed || isClosing)) canClose = true;
         if (isOpening || isClosing) canStop = true;
       }
       return { canOpen, canClose, canStop };
+    }
+
+    _coverMotionState(coverEntityId) {
+      const st = this._state(coverEntityId);
+      const position = st && st.attributes ? st.attributes.current_position : undefined;
+      const isOpening = !!(st && st.state === "opening");
+      const isClosing = !!(st && st.state === "closing");
+      const isMoving = isOpening || isClosing;
+      // Some covers keep reporting the old endpoint position until their
+      // first movement update. While the state says opening/closing, ignore
+      // that stale endpoint so the user can stop or reverse the movement.
+      return {
+        isOpening,
+        isClosing,
+        isMoving,
+        isFullyOpen: !isMoving && (position !== undefined ? position === 100 : !!(st && st.state === "open")),
+        isFullyClosed: !isMoving && (position !== undefined ? position === 0 : !!(st && st.state === "closed")),
+      };
     }
 
     _syncGroupMotionButtons(root) {
@@ -1812,10 +1825,7 @@
         this._saveRename();
         return;
       }
-      // IMPORTANT: Quick-Actions are within a single line with
-      // data-open-detail - must therefore come BEFORE the row-click check
-      // handled, otherwise a tap on "Up"/"Stop"/
-      // "Down" also opens the drilldown.
+      // Keep these actions ahead of the containing row click handler.
       const quickBtn = ev.target.closest("[data-quick]");
       if (quickBtn) {
         ev.stopPropagation();
@@ -2130,23 +2140,11 @@
         if (s) el.innerHTML = this._rowMetaHtml(s);
       });
 
-      // Quick-Action buttons (Up/Stop/Down) operate independently from the
-      // cover state object itself and has so far only been used during
-      // structural render (_render(), only during navigation) re-render
-      // calculated. This is why z.B remained. "Stop" is disabled when the
-      // Shutter only starts to move AFTER the last render
-      // Therefore, here during EVERY background update, the disabled flags
-      // update directly to the existing buttons (no
-      // innerHTML replacement needed, no interaction is interrupted).
+      // Refresh quick-action button availability on every Home Assistant state
+      // update without rebuilding the controls while the user interacts.
       body.querySelectorAll("[data-quick-actions]").forEach((el) => {
         const coverEntityId = el.getAttribute("data-quick-actions");
-        const st = this._state(coverEntityId);
-        const position = st && st.attributes ? st.attributes.current_position : undefined;
-        const isFullyOpen = position !== undefined ? position === 100 : st && st.state === "open";
-        const isFullyClosed = position !== undefined ? position === 0 : st && st.state === "closed";
-        const isOpening = st && st.state === "opening";
-        const isClosing = st && st.state === "closing";
-        const isMoving = isOpening || isClosing;
+        const { isFullyOpen, isFullyClosed, isOpening, isClosing, isMoving } = this._coverMotionState(coverEntityId);
         const openBtn = el.querySelector('[data-quick="open"]');
         const stopBtn = el.querySelector('[data-quick="stop"]');
         const closeBtn = el.querySelector('[data-quick="close"]');
@@ -2672,13 +2670,7 @@
     }
 
     _quickActionsHtml(coverEntityId) {
-      const st = this._state(coverEntityId);
-      const position = st && st.attributes ? st.attributes.current_position : undefined;
-      const isFullyOpen = position !== undefined ? position === 100 : st && st.state === "open";
-      const isFullyClosed = position !== undefined ? position === 0 : st && st.state === "closed";
-      const isOpening = st && st.state === "opening";
-      const isClosing = st && st.state === "closing";
-      const isMoving = isOpening || isClosing;
+      const { isFullyOpen, isFullyClosed, isOpening, isClosing, isMoving } = this._coverMotionState(coverEntityId);
       return `
         <div class="quick-actions" data-quick-actions="${coverEntityId}">
           <button data-quick="open" title="Öffnen" ${isFullyOpen || isOpening ? "disabled" : ""}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
