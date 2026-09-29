@@ -30,6 +30,11 @@ settings. It does not replace the cover integration for your devices.
 This repository is planned for HACS custom repository use. It is not yet listed
 in the HACS default catalog.
 
+When this repository is tracked and installed through HACS, HACS provides a
+native update entity in Home Assistant and can install the update from there.
+Restart Home Assistant after updating the integration. A manually copied
+installation that is not tracked by HACS does not get this update entity.
+
 ### Manual install
 
 Copy this repository's `custom_components/smart_shutter` directory to

@@ -1,0 +1,24 @@
+name: Release version
+
+on:
+  push:
+    tags:
+      - "**"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Check tag against integration manifest
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: python scripts/check_release_tag.py "$RELEASE_TAG"

@@ -20,5 +20,8 @@ npm run test:card
 ```
 
 Changes to scheduling, service actions, or access control need behavior tests.
-Run Hassfest and HACS validation before a release. Never claim browser or real
-device behavior was tested unless that check was actually performed.
+Run Hassfest and HACS validation before a release. Set the integration
+manifest version to `X.Y.Z`, push the matching `vX.Y.Z` tag, and wait for the
+release-version check to pass before publishing the GitHub release. Never claim
+browser or real device behavior was tested unless that check was actually
+performed.
