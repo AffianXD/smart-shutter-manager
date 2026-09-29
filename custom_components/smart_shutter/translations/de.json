@@ -27,9 +27,9 @@
         "title": "Smart Shutter Manager – Einstellungen",
         "menu_options": {
           "basic_settings": "Basis-Einstellungen",
-          "custom_schedules_menu": "Custom-Profile verwalten",
+          "custom_schedules_menu": "Eigene Zeitprofile verwalten",
           "finish": "Speichern & schließen",
-          "external_triggers_menu": "Externe Trigger verwalten",
+          "external_triggers_menu": "Externe Auslöser verwalten",
           "rename_shutters": "Rollläden umbenennen"
         }
       },
@@ -37,22 +37,22 @@
         "title": "Globale Einstellungen",
         "description": "Alle Felder sind optional.",
         "data": {
-          "holiday_entity": "Ferien-Entity (binary_sensor/input_boolean/calendar - 'an' = Ferien aktiv)",
-          "holiday_weekdays": "Ferien gilt an diesen Wochentagen (Default: Mo-Fr, am Wochenende gilt sonst weiterhin normal Wochenende)",
-          "stagger_delay_ms": "Gestaffelte Befehlsausgabe: Verzögerung in ms zwischen jedem Rollladen bei Mehrfachaktionen (0 = aus, RF-Kollisionsschutz)",
-          "frost_entity": "Frostschutz-Entity (binary_sensor/input_boolean - 'an' = Frost aktiv, keine Bewegung)",
-          "notify_service": "Notify-Service für Benachrichtigungen (z.B. notify.notify), leer = aus",
+          "holiday_entity": "Ferien-Entität (binary_sensor/input_boolean/calendar – 'an' = Ferien aktiv)",
+          "holiday_weekdays": "Ferien gelten an diesen Wochentagen (Standard: Mo–Fr; am Wochenende gelten weiterhin die regulären Wochenendzeiten)",
+          "stagger_delay_ms": "Gestaffelte Befehlsausgabe: Verzögerung zwischen den Rollläden bei Mehrfachaktionen (0 = aus, Schutz vor Funkkollisionen)",
+          "frost_entity": "Frostschutz-Entität (binary_sensor/input_boolean – 'an' = Frost aktiv, keine Bewegung)",
+          "notify_service": "Benachrichtigungsdienst (z. B. notify.notify), leer = aus",
           "pre_notify_lead_minutes": "Vorwarnung vor dem Schließen (Minuten, 0 = aus)",
           "postpone_options_minutes": "Verschieben-Optionen in Minuten, kommagetrennt (z.B. 5,10,15)",
           "catch_up_window_minutes": "Nachhol-Fenster nach Neustart (Minuten, 0 = kein Nachholen)",
-          "notify_text_moved": "Template: Bewegungs-Benachrichtigung (Variablen: names, count, action, trigger)",
-          "notify_text_frost": "Template: Frostschutz-Benachrichtigung (Variablen: names, count)",
-          "notify_text_preclose": "Template: Vorwarnung vorm Schließen (Variablen: name, time, action)",
-          "notification_max_age_minutes": "Vorwarnung-Buttons ignorieren nach wie vielen Minuten? (0 = nie ignorieren)"
+          "notify_text_moved": "Vorlage: Bewegungsbenachrichtigung (Variablen: names, count, action, trigger)",
+          "notify_text_frost": "Vorlage: Frostschutzbenachrichtigung (Variablen: names, count)",
+          "notify_text_preclose": "Vorlage: Vorwarnung vor dem Schließen (Variablen: name, time, action)",
+          "notification_max_age_minutes": "Wie lange bleiben Vorwarnungsschaltflächen aktiv? (Minuten, 0 = unbegrenzt)"
         }
       },
       "custom_schedules_menu": {
-        "title": "Custom-Profile",
+        "title": "Eigene Zeitprofile",
         "description": "Wiederkehrende Zeit-Ausnahmen, die einmalig angelegt werden und für alle Rollläden gelten (pro Rollladen aber lokal überschreibbar). Reihenfolge = Priorität bei Überschneidungen - die zuerst gelistete Regel gewinnt.",
         "data": {
           "choice": "Regel auswählen"
@@ -66,8 +66,8 @@
         }
       },
       "custom_schedule_edit": {
-        "title": "Custom-Profil: {name}",
-        "description": "Custom-Profile unterstützen nur feste Uhrzeiten (kein Sonnenauf-/-untergang). Leer lassen = diese Aktion (Öffnen/Schließen) bleibt von dieser Regel unberührt.",
+        "title": "Eigenes Zeitprofil: {name}",
+        "description": "Eigene Zeitprofile unterstützen nur feste Uhrzeiten (keinen Sonnenauf- oder -untergang). Bleibt das Feld leer, wird diese Aktion (Öffnen/Schließen) von der Regel nicht verändert.",
         "data": {
           "name": "Name",
           "weekdays": "Wochentage",
@@ -87,20 +87,20 @@
         }
       },
       "external_triggers_menu": {
-        "title": "Externe Trigger",
-        "description": "Benannte Regeln, deren Zielzeit per Service (smart_shutter.set_external_trigger) aus einer externen Automation gesetzt wird - z.B. um eine Wecker-Uhrzeit an einen bestimmten Rollladen weiterzugeben. Ein aktiver Trigger gewinnt immer gegenüber Profilen/Custom-Profilen, bis sein Zeitpunkt erreicht ist - eine zusätzliche Prioritäts-Liste ist dafür nicht nötig.",
+        "title": "Externe Auslöser",
+        "description": "Benannte Regeln, deren Zielzeit über den Home-Assistant-Dienst smart_shutter.set_external_trigger aus einer Automation festgelegt wird – zum Beispiel, um eine Weckzeit an einen bestimmten Rollladen weiterzugeben. Ein aktiver Auslöser hat Vorrang vor Profilen und eigenen Zeitprofilen, bis seine Zielzeit erreicht ist. Eine zusätzliche Prioritätsliste ist nicht nötig.",
         "data": {
-          "choice": "Trigger auswählen"
+          "choice": "Auslöser auswählen"
         }
       },
       "external_trigger_edit": {
-        "title": "Externer Trigger: {name}",
-        "description": "Der Name wird im Service smart_shutter.set_external_trigger als Referenz benutzt (Groß-/Kleinschreibung beachten).",
+        "title": "Externer Auslöser: {name}",
+        "description": "Der Name wird beim Aufruf des Dienstes smart_shutter.set_external_trigger als Kennung verwendet (Groß- und Kleinschreibung beachten).",
         "data": {
           "name": "Name",
           "entity_id": "Rollladen",
           "action": "Aktion",
-          "delete": "Diesen Trigger löschen"
+          "delete": "Diesen Auslöser löschen"
         }
       },
       "rename_shutters": {
@@ -112,7 +112,7 @@
       "custom_schedule_no_weekdays": "Bitte mindestens einen Wochentag auswählen.",
       "custom_schedule_no_time": "Bitte mindestens eine Uhrzeit (Öffnen oder Schließen) angeben.",
       "external_trigger_no_name": "Bitte einen Namen vergeben.",
-      "external_trigger_duplicate_name": "Dieser Name wird bereits von einem anderen Externen Trigger verwendet.",
+      "external_trigger_duplicate_name": "Dieser Name wird bereits von einem anderen externen Auslöser verwendet.",
       "external_trigger_no_entity": "Bitte einen Rollladen auswählen."
     }
   },
@@ -356,7 +356,7 @@
         },
         "source": {
           "name": "Quelle",
-          "description": "Optionale Beschriftung des Overrides in der Dashboard-Karte."
+          "description": "Optionale Beschriftung der manuellen Änderung in der Dashboard-Karte."
         }
       }
     },
@@ -378,13 +378,13 @@
         },
         "source": {
           "name": "Quelle",
-          "description": "Optionale Beschriftung des Overrides in der Dashboard-Karte."
+          "description": "Optionale Beschriftung der manuellen Änderung in der Dashboard-Karte."
         }
       }
     },
     "clear_override": {
-      "name": "Aktions-Override aufheben",
-      "description": "Hebt ein aktives Überspringen oder Verschieben auf und stellt den normalen Zeitplan wieder her.",
+      "name": "Aktionsausnahme aufheben",
+      "description": "Hebt eine aktive Auslassung oder Verschiebung auf und stellt den regulären Zeitplan wieder her.",
       "fields": {
         "entity_id": {
           "name": "Rollladen",
@@ -392,7 +392,7 @@
         },
         "action": {
           "name": "Aktion",
-          "description": "Für welche Aktion der Override aufgehoben wird."
+          "description": "Für welche Aktion die Ausnahme aufgehoben wird."
         }
       }
     },
@@ -407,16 +407,16 @@
       }
     },
     "set_external_trigger": {
-      "name": "Externen Trigger setzen",
-      "description": "Setzt die nächste Zielzeit eines benannten externen Triggers. Bis dahin hat er Vorrang vor regulären und eigenen Zeitplänen.",
+      "name": "Externe Zeitvorgabe setzen",
+      "description": "Legt die nächste Zielzeit für einen benannten externen Auslöser fest. Bis zu diesem Zeitpunkt hat er Vorrang vor regulären und eigenen Zeitplänen.",
       "fields": {
         "name": {
-          "name": "Triggername",
-          "description": "Der konfigurierte Name des Triggers (Groß- und Kleinschreibung beachten)."
+          "name": "Name des Auslösers",
+          "description": "Der konfigurierte Name des Auslösers (Groß- und Kleinschreibung beachten)."
         },
         "time": {
           "name": "Uhrzeit",
-          "description": "Zielzeit als Text (z. B. 07:15). Eine zukünftige Zeit gilt heute, sonst morgen. Text erlaubt auch Home-Assistant-Templates."
+          "description": "Zielzeit als Text (z. B. 07:15). Eine zukünftige Zeit gilt heute, sonst morgen. Der Text darf auch Home-Assistant-Vorlagen enthalten."
         }
       }
     }

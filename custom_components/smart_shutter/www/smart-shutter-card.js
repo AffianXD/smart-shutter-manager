@@ -41,7 +41,7 @@
       "Bis Uhrzeit": "Until Time",
       "Custom-Profile": "Custom profiles",
       "Custom-Profile verwalten (falls diese Aktion zeitgesteuert über ein Profil kommt)": "Manage custom profiles (if this action uses a scheduled profile)",
-      "Die globale Automatik-Steuerung betrifft ALLE Rollläden im Haus und ist daher nur für Admins sichtbar. Nutze die Automatik-Schalter in deinem Bereich weiter unten.": "The global automation control affects ALL shutters in the house and is therefore only visible to admins. Use the automation switches in your area below.",
+      "Die globale Automatik-Steuerung betrifft ALLE Rollläden im Haus und ist daher nur für Administratoren sichtbar. Nutze die Automatik-Schalter in deinem Bereich weiter unten.": "The global automation control affects ALL shutters in the house and is therefore only visible to administrators. Use the automation switches in your area below.",
       "Eigene Gruppen (z.B. Vorne/Hinten/Nord/Süd) mit Voreinstellungen. Ein Rollladen kann mehreren Bereichen gleichzeitig angehören. Über \"Auf Mitglieder anwenden\" werden die Werte auf die individuellen Einstellungen der zugeordneten Rollläden übertragen. Hoch/Stopp/Runter und der Automatik-Schalter wirken sofort auf alle Mitglieder.": "Custom groups (e.g. Front/Back/North/South) with preset settings. A shutter can belong to multiple areas at the same time. By using \"Apply to members\", the values are transferred to the individual settings of the assigned shutters. Up/Stop/Down and the automation switch take effect immediately on all members.",
       "Eigener Benachrichtigungs-Empfänger NUR für Ereignisse dieses Bereichs (Bewegungen, Frostschutz, Sonnenstand-Regel) - z.B. das Handy eines Gastes statt deines eigenen. Leer = die globale Basis-Einstellung wird verwendet.": "Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used.",
       "Ein Rollladen kann mehreren Bereichen gleichzeitig angehören (z.B. \"Hinten\" UND \"Wohnräume\") - beim Anwenden gewinnt bei sich widersprechenden Einstellungen der zuletzt angewendete Bereich.": "A shutter can belong to multiple areas at the same time (e.g. \"Back\" AND \"Living rooms\") - when applying, the last applied area takes precedence in case of conflicting settings.",
@@ -77,14 +77,14 @@
       "Neuen Externen Trigger für diesen Rollladen": "Create new external trigger for this shutter",
       "Neuer Bereich": "New Area",
       "Neuer Zeitplan für diesen Bereich": "New schedule for this area",
-      "Neues Custom-Profil": "New custom profile",
+      "Neues eigenes Zeitprofil": "New custom profile",
       "Nicht überschreiben": "Do not override",
       "Noch keine Bereiche angelegt.": "No areas created yet.",
       "Noch keine Custom-Profile angelegt.": "No custom profiles created yet.",
       "Noch keine Ereignisse aufgezeichnet.": "No events recorded yet.",
       "Noch keine Externen Trigger angelegt.": "No external triggers created yet.",
       "Noch keine eigenen Zeitpläne für diesen Bereich.": "No schedules for this area yet.",
-      "Notify-Service für diesen Bereich": "Notify service for this area",
+      "Benachrichtigungsdienst für diesen Bereich": "Notification service for this area",
       "Notiz (warum individuelle Einstellungen?)": "Note (why individual settings?)",
       "Notiz speichern": "Save note",
       "Nächste Aktion:": "Next action:",
@@ -162,7 +162,6 @@
       "Typ Schließen": "Close type",
       "Sonnenversatz Öffnen": "Open sun offset",
       "Sonnenversatz Schließen": "Close sun offset",
-      "Ferien-Entity": "Holiday entity",
       "'an' = Ferien aktiv": "'on' = holiday active",
       "Außentemperatur-Sensor": "Outdoor temperature sensor",
       "Global, fließt in Frostschutz + Sonnenstand-Zusatzbedingung (als 'outside_temp') ein": "Global sensor used for frost protection and sun position conditions (as 'outside_temp')",
@@ -170,7 +169,10 @@
       "Automatik pausiert (wie bei manuellem Eingriff), sobald Innen- oder Außentemperatur diesen Wert unterschreitet. Pro Bereich überschreibbar.": "Automation pauses when indoor or outdoor temperature falls below this value. Can be overridden per area.",
       "Vorwarnung vor dem Schließen (Minuten)": "Warning before closing (minutes)",
       "Erkennt Bewegungen, die NICHT von der Automatik kommen (Wandschalter, Fernbedienung, andere Automation) und pausiert die Automatik für diesen Rollladen entsprechend lange.": "Detects movements outside this automation (wall switch, remote, or another automation) and pauses this shutter's automation for the configured duration.",
-      "Verzögerung zwischen den einzelnen Rollläden bei Mehrfachaktionen (globaler Zeitplan, Bereich, 'Alle hoch/runter/Stopp') - RF-Kollisionsschutz für funkbasierte Motoren. Bei WLAN-Geräten (z.B. Shelly) normalerweise nicht nötig.": "Delay between shutters for group actions (global schedule, area, all up/down/stop) to reduce radio collisions. Usually unnecessary for Wi-Fi devices.",
+      "Verzögerung zwischen den einzelnen Rollläden bei Mehrfachaktionen (globaler Zeitplan, Bereich, 'Alle hoch/runter/Stopp') - Funk-Kollisionsschutz für funkbasierte Motoren. Bei WLAN-Geräten (z.B. Shelly) normalerweise nicht nötig.": "Delay between shutters for group actions (global schedule, area, all up/down/stop) to reduce radio collisions. Usually unnecessary for Wi-Fi devices.",
+      "Vorlage: Bewegungsbenachrichtigung": "Movement notification template",
+      "Vorlage: Frostschutzbenachrichtigung": "Frost protection notification template",
+      "Vorlage: Vorwarnung vor dem Schließen": "Pre-closing warning template",
       "bereits erfolgt": "already occurred",
       "zum Bearbeiten antippen": "tap to edit",
       "Rollladen": "Shutter",
@@ -178,7 +180,24 @@
       "Eigene Zeitpläne für diesen Bereich": "Schedules for this area"
     },
     de: {
-      "\"Global\" takes over trigger type, sun offset, and target position completely from the global settings. \"Individual\" allows custom values for this shutter (still separable per open/close and aspect).": "\"Global\" übernimmt Trigger-Typ, Sonnenversatz und Zielposition vollständig von den globalen Einstellungen. \"Individuell\" erlaubt eigene Werte für diesen Rollladen (weiterhin pro Öffnen/Schließen und Aspekt getrennt einstellbar).",
+      "Advanced": "Erweitert",
+      "Basic": "Grundlagen",
+      "Dashboard": "Übersicht",
+      "Detail": "Details",
+      "Weekday": "Arbeitstage",
+      "Weekend": "Wochenende",
+      "Holiday": "Ferien",
+      "Frost protection entity": "Frostschutz-Entität",
+      "Holiday entity": "Ferien-Entität",
+      "Notification service": "Benachrichtigungsdienst",
+      "e.g. notify.notify, empty = off": "z. B. notify.notify, leer = aus",
+      "Global trigger type & sun offset": "Globaler Auslösertyp und Sonnenversatz",
+      "Azimuth from": "Azimut von",
+      "Azimuth to": "Azimut bis",
+      "New external trigger": "Neuer externer Auslöser",
+      "Timing and delays": "Zeitverhalten und Verzögerungen",
+      "Warning button validity (minutes, 0 = unlimited)": "Gültigkeitsdauer der Vorwarnungsschaltflächen (Minuten, 0 = unbegrenzt)",
+      "\"Global\" takes over trigger type, sun offset, and target position completely from the global settings. \"Individual\" allows custom values for this shutter (still separable per open/close and aspect).": "\"Global\" übernimmt Auslösertyp, Sonnenversatz und Zielposition vollständig von den globalen Einstellungen. \"Individuell\" erlaubt eigene Werte für diesen Rollladen (weiterhin getrennt für Öffnen/Schließen und den jeweiligen Aspekt einstellbar).",
       "0° = Sun on the horizon, 90° = Sun at zenith (noon in summer). Rule of thumb: in the morning/afternoon usually 15-35°, at noon in summer up to 60°+.": "0° = Sonne am Horizont, 90° = Sonne im Zenit (mittags im Sommer). Faustregel: vormittags/nachmittags meist 15-35°, mittags im Sommer bis 60°+.",
       "Expiry date (optional)": "Ablaufdatum (optional)",
       "Action": "Aktion",
@@ -197,15 +216,15 @@
       "Basic Settings": "Basis-Einstellungen",
       "Send notification when this rule triggers": "Benachrichtigung senden, wenn diese Regel auslöst",
       "Notifications": "Benachrichtigungen",
-      "Named rules whose target time is set via service (smart_shutter.set_external_trigger) from an external automation. Always takes precedence over profiles/custom profiles. Can control a single shutter OR an entire area (all members).": "Benannte Regeln, deren Zielzeit per Service (smart_shutter.set_external_trigger) aus einer externen Automation gesetzt wird. Gewinnt immer gegenüber Profilen/Custom-Profilen. Kann einen einzelnen Rollladen ODER gleich einen ganzen Bereich (alle Mitglieder) ansteuern.",
+      "Named rules whose target time is set via service (smart_shutter.set_external_trigger) from an external automation. Always takes precedence over profiles/custom profiles. Can control a single shutter OR an entire area (all members).": "Benannte Regeln, deren Zielzeit über den Home-Assistant-Dienst smart_shutter.set_external_trigger aus einer externen Automation festgelegt wird. Sie haben Vorrang vor Profilen und eigenen Zeitprofilen und können einen einzelnen Rollladen oder einen ganzen Bereich steuern.",
       "Area": "Bereich",
       "Areas": "Bereiche",
       "Manage Areas": "Bereiche verwalten",
       "Applies to": "Betrifft",
       "Until Time": "Bis Uhrzeit",
-      "Custom profiles": "Custom-Profile",
-      "Manage custom profiles (if this action uses a scheduled profile)": "Custom-Profile verwalten (falls diese Aktion zeitgesteuert über ein Profil kommt)",
-      "The global automation control affects ALL shutters in the house and is therefore only visible to admins. Use the automation switches in your area below.": "Die globale Automatik-Steuerung betrifft ALLE Rollläden im Haus und ist daher nur für Admins sichtbar. Nutze die Automatik-Schalter in deinem Bereich weiter unten.",
+      "Custom profiles": "Eigene Zeitprofile",
+      "Manage custom profiles (if this action uses a scheduled profile)": "Eigene Zeitprofile verwalten (wenn diese Aktion über ein Profil zeitgesteuert wird)",
+      "The global automation control affects ALL shutters in the house and is therefore only visible to admins. Use the automation switches in your area below.": "Die globale Automatik-Steuerung betrifft ALLE Rollläden im Haus und ist daher nur für Administratoren sichtbar. Nutze die Automatik-Schalter in deinem Bereich weiter unten.",
       "Custom groups (e.g. Front/Back/North/South) with preset settings. A shutter can belong to multiple areas at the same time. By using \"Apply to members\", the values are transferred to the individual settings of the assigned shutters. Up/Stop/Down and the automation switch take effect immediately on all members.": "Eigene Gruppen (z.B. Vorne/Hinten/Nord/Süd) mit Voreinstellungen. Ein Rollladen kann mehreren Bereichen gleichzeitig angehören. Über \"Auf Mitglieder anwenden\" werden die Werte auf die individuellen Einstellungen der zugeordneten Rollläden übertragen. Hoch/Stopp/Runter und der Automatik-Schalter wirken sofort auf alle Mitglieder.",
       "Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used.": "Eigener Benachrichtigungs-Empfänger NUR für Ereignisse dieses Bereichs (Bewegungen, Frostschutz, Sonnenstand-Regel) - z.B. das Handy eines Gastes statt deines eigenen. Leer = die globale Basis-Einstellung wird verwendet.",
       "A shutter can belong to multiple areas at the same time (e.g. \"Back\" AND \"Living rooms\") - when applying, the last applied area takes precedence in case of conflicting settings.": "Ein Rollladen kann mehreren Bereichen gleichzeitig angehören (z.B. \"Hinten\" UND \"Wohnräume\") - beim Anwenden gewinnt bei sich widersprechenden Einstellungen der zuletzt angewendete Bereich.",
@@ -214,22 +233,22 @@
       "Event Log": "Ereignisverlauf",
       "Advanced Settings": "Erweiterte Einstellungen",
       "No shutters managed by the Smart Shutter Manager were found.": "Es wurden keine vom Smart Shutter Manager verwalteten Rollläden gefunden.",
-      "External Triggers": "Externe Trigger",
-      "External Triggers for this Shutter": "Externe Trigger für diesen Rollladen",
-      "Holiday/Frost Entity, Notifications": "Ferien-/Frost-Entity, Benachrichtigungen",
+      "External Triggers": "Externe Auslöser",
+      "External Triggers for this Shutter": "Externe Auslöser für diesen Rollladen",
+      "Holiday/Frost Entity, Notifications": "Ferien-/Frostschutz-Entität, Benachrichtigungen",
       "Automatically moves all members of this area to the target position as soon as the sun shines in from the selected direction AND reaches at least the specified height - e.g. targeted shading when the sun shines directly on this facade. Runs independently of the normal open/close schedule.": "Fährt alle Mitglieder dieses Bereichs automatisch auf die Zielposition, sobald die Sonne von der gewählten Richtung hereinscheint UND mindestens die angegebene Höhe erreicht hat - z.B. gezielte Verschattung, wenn die Sonne genau auf diese Fassade scheint. Läuft unabhängig vom normalen Öffnen-/Schließen-Zeitplan.",
       "Edit for this Shutter": "Für diesen Rollladen bearbeiten",
       "Entire Area (all members)": "Ganzer Bereich (alle Mitglieder)",
       "Apply to ALL shutters (central time exceptions) - editable here directly, without switching views.": "Gelten für ALLE Rollläden (zentrale Zeit-Ausnahmen) - hier direkt bearbeitbar, ohne die Ansicht zu wechseln.",
       "Estimated warning time, no exact prediction (the sun position is continuously monitored, not like in the schedule to a fixed known time) - based on the current rate of change in sun height.": "Geschätzte Vorwarnzeit, keine exakte Vorausberechnung (die Sonnenposition wird laufend beobachtet, nicht wie beim Zeitplan zu einem fest bekannten Zeitpunkt) - basiert auf der aktuellen Änderungsrate der Sonnenhöhe.",
-      "Global Entities": "Globale Entities",
+      "Global Entities": "Globale Entitäten",
       "Global Times per Profile": "Globale Zeiten je Profil",
       "Global Target Position": "Globale Zielposition",
-      "HA users who are allowed to see/operate ONLY this area (e.g. Airbnb/tenant access) - typical use case: own, non-admin HA user per rented apartment, who in HA itself is additionally granted (Settings → People → Users) only the entities of that apartment. This area assignment alone does NOT replace HA's own user permissions - it only controls what the Smart-Shutter card displays/provides.": "HA-Nutzer, die NUR diesen Bereich sehen/bedienen dürfen (z.B. Airbnb-/Mieter-Zugang) - typischer Einsatz: eigener, nicht-Admin HA-Nutzer pro vermieteter Wohnung, dem in HA selbst zusätzlich (Einstellungen → Personen → Nutzer) nur die Entities dieser Wohnung freigegeben sind. Diese Bereichs-Zuordnung allein ersetzt HAs eigene Nutzer-Berechtigung NICHT - sie steuert nur, was die Smart-Shutter-Karte anzeigt/liefert.",
+      "HA users who are allowed to see/operate ONLY this area (e.g. Airbnb/tenant access) - typical use case: own, non-admin HA user per rented apartment, who in HA itself is additionally granted (Settings → People → Users) only the entities of that apartment. This area assignment alone does NOT replace HA's own user permissions - it only controls what the Smart-Shutter card displays/provides.": "HA-Nutzer, die nur diesen Bereich sehen und bedienen dürfen (z. B. für Airbnb- oder Mieterzugänge). Typischerweise erhält ein eigener, nicht administrativer HA-Nutzer für die vermietete Wohnung in Home Assistant nur Zugriff auf deren Entitäten (Einstellungen → Personen → Nutzer). Die Bereichszuordnung allein ersetzt die Nutzerberechtigungen von Home Assistant nicht; sie steuert nur, was die Smart-Shutter-Karte anzeigt und bereitstellt.",
       "Skip Today": "Heute überspringen",
       "Up": "Hoch",
       "Apply to all members now": "Jetzt auf alle Mitglieder anwenden",
-      "No external trigger set for this shutter.": "Kein Externer Trigger für diesen Rollladen angelegt.",
+      "No external trigger set for this shutter.": "Für diesen Rollladen ist noch kein externer Auslöser angelegt.",
       "No HA users found.": "Keine HA-Nutzer gefunden.",
       "Loading event history ...": "Lade Ereignisverlauf ...",
       "Loading Smart Shutter Manager data…": "Lade Smart Shutter Manager Daten…",
@@ -237,23 +256,23 @@
       "My Area": "Mein Bereich",
       "Members": "Mitglieder",
       "Mode": "Modus",
-      "Create new external trigger": "Neuen Externen Trigger anlegen",
-      "Create new external trigger for this shutter": "Neuen Externen Trigger für diesen Rollladen",
+      "Create new external trigger": "Neuen externen Auslöser anlegen",
+      "Create new external trigger for this shutter": "Neuen externen Auslöser für diesen Rollladen anlegen",
       "New Area": "Neuer Bereich",
       "New schedule for this area": "Neuer Zeitplan für diesen Bereich",
-      "New custom profile": "Neues Custom-Profil",
+      "New custom profile": "Neues eigenes Zeitprofil",
       "Do not override": "Nicht überschreiben",
       "No areas created yet.": "Noch keine Bereiche angelegt.",
-      "No custom profiles created yet.": "Noch keine Custom-Profile angelegt.",
+      "No custom profiles created yet.": "Noch keine eigenen Zeitprofile angelegt.",
       "No events recorded yet.": "Noch keine Ereignisse aufgezeichnet.",
-      "No external triggers created yet.": "Noch keine Externen Trigger angelegt.",
+      "No external triggers created yet.": "Noch keine externen Auslöser angelegt.",
       "No schedules for this area yet.": "Noch keine eigenen Zeitpläne für diesen Bereich.",
-      "Notify service for this area": "Notify-Service für diesen Bereich",
+      "Notification service for this area": "Benachrichtigungsdienst für diesen Bereich",
       "Note (why individual settings?)": "Notiz (warum individuelle Einstellungen?)",
       "Save note": "Notiz speichern",
       "Next action:": "Nächste Aktion:",
       "Without a custom sensor, a temperature sensor from the same room is used automatically if uniquely assignable - otherwise, the global indoor temperature sensor is used (Settings → Basic Settings).": "Ohne eigenen Sensor wird automatisch ein Temperatursensor aus demselben Raum verwendet, falls eindeutig zuordenbar - sonst gilt der globale Innentemperatur-Sensor (Einstellungen → Basis-Einstellungen).",
-      "Cancel override now": "Override jetzt aufheben",
+      "Cancel override now": "Manuelle Änderung jetzt aufheben",
       "End pause now": "Pause jetzt aufheben",
       "Profile": "Profil",
       "Close source": "Quelle Schließen",
@@ -272,21 +291,21 @@
       "Sun offset (optional)": "Sonnenversatz (optional)",
       "Save": "Speichern",
       "Stop": "Stopp",
-      "Trigger Type": "Trigger-Typ",
-      "Trigger Type (Time / Solar Position)": "Trigger-Typ (Uhrzeit / Sonnenstand)",
-      "Trigger Type (optional)": "Trigger-Typ (optional)",
+      "Trigger Type": "Auslösertyp",
+      "Trigger Type (Time / Solar Position)": "Auslösertyp (Uhrzeit / Sonnenstand)",
+      "Trigger Type (optional)": "Auslösertyp (optional)",
       "Type": "Typ",
       "Prevents repeated triggering when the sun's elevation only slightly fluctuates around the threshold (it will only be reactivated after sufficient distance below the threshold).": "Verhindert wiederholtes Auslösen, wenn die Sonnenhöhe nur knapp um die Schwelle pendelt (erst nach ausreichendem Abstand darunter wird erneut \"scharf\" geschaltet).",
       "History": "Verlauf",
       "Shift": "Verschieben",
-      "Time Triggers that can be triggered by Automations": "Von Automationen ansteuerbare Zeit-Trigger",
+      "Time Triggers that can be triggered by Automations": "Zeit-Auslöser, die von Automationen gesteuert werden können",
       "From which direction is the sun shining on this area?": "Von welcher Richtung scheint die Sonne auf diesen Bereich?",
       "Send a warning BEFORE this rule is triggered": "Vorwarnung senden, BEVOR diese Regel auslöst",
-      "More Entities": "Weitere Entities",
-      "Recurring Time Exceptions ONLY for the shutters in this area (e.g. \"Vacation of the holiday home\"). Never affects other areas or your own host area. Order = Priority in case of overlaps - the first rule wins.": "Wiederkehrende Zeit-Ausnahmen NUR für die Rollläden dieses Bereichs (z.B. \"Urlaub der Ferienwohnung\"). Wirkt sich nie auf andere Bereiche oder deinen eigenen Host-Bereich aus. Reihenfolge = Priorität bei Überschneidungen - die erste Regel gewinnt.",
+      "More Entities": "Weitere Entitäten",
+      "Recurring Time Exceptions ONLY for the shutters in this area (e.g. \"Vacation of the holiday home\"). Never affects other areas or your own host area. Order = Priority in case of overlaps - the first rule wins.": "Wiederkehrende Zeit-Ausnahmen nur für die Rollläden dieses Bereichs (z. B. \"Urlaub der Ferienwohnung\"). Sie wirken sich nicht auf andere Bereiche oder den eigenen Gastgeberbereich aus. Bei Überschneidungen gewinnt die zuerst gelistete Regel.",
       "Manage Recurring Time Exceptions": "Wiederkehrende Zeit-Ausnahmen verwalten",
       "Recurring Time Exceptions, apply to all shutters (can be overwritten locally per shutter). Order = Priority in case of overlaps - the first rule wins.": "Wiederkehrende Zeit-Ausnahmen, gelten für alle Rollläden (pro Rollladen lokal überschreibbar). Reihenfolge = Priorität bei Überschneidungen - die erste Regel gewinnt.",
-      "Used as a reference in the service smart_shutter.set_external_trigger.": "Wird im Service smart_shutter.set_external_trigger als Referenz benutzt.",
+      "Used as a reference in the service smart_shutter.set_external_trigger.": "Wird beim Aufruf des Dienstes smart_shutter.set_external_trigger als Kennung verwendet.",
       "Weekdays": "Wochentage",
       "Times per Profile": "Zeiten je Profil",
       "Times, Sun Position Rule, Frost Protection for your area": "Zeiten, Sonnenstand-Regel, Frostschutz für deinen Bereich",
@@ -312,9 +331,9 @@
       "Inherited from global": "Übernommen von Global",
       "☀ Sun position": "☀ Sonnenstand",
       "⚠ Conflict": "⚠ Konflikt",
-      "Notification text (optional, Jinja template)": "Benachrichtigungstext (optional, Jinja-Template)",
+      "Notification text (optional, Jinja template)": "Benachrichtigungstext (optional, Jinja-Vorlage)",
       "Variables: {{ area }}, {{ count }}, {{ position }}, {{ names }}. Empty = default text. Uses the configured notification service.": "Variablen: {{ area }}, {{ count }}, {{ position }}, {{ names }}. Leer = Standardtext. Nutzt den konfigurierten Benachrichtigungsdienst.",
-      "Warning text (optional, Jinja template)": "Vorwarnungstext (optional, Jinja-Template)",
+      "Warning text (optional, Jinja template)": "Vorwarnungstext (optional, Jinja-Vorlage)",
       "Variables: {{ area }}, {{ count }}, {{ position }}, {{ minutes }}. Empty = default text.": "Variablen: {{ area }}, {{ count }}, {{ position }}, {{ minutes }}. Leer = Standardtext.",
       "{{ area }}: moved {{ count }} shutters to {{ position }}%.": "{{ area }}: {{ count }} Rollläden auf {{ position }}% gefahren.",
       "{{ area }}: shutters will move to {{ position }}% in about {{ minutes }} minutes.": "{{ area }}: Rollläden fahren in ca. {{ minutes }} Minuten auf {{ position }}%."
@@ -352,20 +371,20 @@
     de: {
       bulkPostpone: (action, minutes) => `${action} für alle Rollläden um ${minutes} Min. verschoben`,
       bulkSkip: (action) => `${action} für alle Rollläden heute übersprungen`,
-      overrideCleared: "Override aufgehoben - regulärer Zeitplan gilt wieder",
-      overrideNotice: (until, source) => `Ein manuelles Verschieben/Überspringen ist noch aktiv (bis ${until})${source ? ` (Quelle: ${source})` : ""} und überstimmt aktuell den regulären Zeitplan. Individuelle Zeiten wirken wieder, sobald das Override abläuft.`,
+      overrideCleared: "Manuelle Änderung aufgehoben – der reguläre Zeitplan gilt wieder",
+      overrideNotice: (until, source) => `Ein manuelles Verschieben oder Auslassen ist bis ${until} aktiv${source ? ` (Quelle: ${source})` : ""} und hat derzeit Vorrang vor dem regulären Zeitplan. Individuelle Zeitänderungen greifen wieder, sobald die Änderung abläuft.`,
       manualPauseNotice: (until) => `Es wurde eine Bewegung erkannt, die nicht von der Automatik kam (Wandschalter, Fernbedienung oder andere Automation). Die Automatik für diesen Rollladen ist bis ${until} pausiert.`,
       areaAutomation: (count, on) => `Automatik für ${count} ${count === 1 ? "Rollladen" : "Rollläden"} ${on ? "eingeschaltet" : "ausgeschaltet"}`,
       areaApplying: (name, count) => `"${name}" wird auf ${count} ${count === 1 ? "Rollladen" : "Rollläden"} angewendet …`,
       areaNameRequired: "Bitte einen Namen für den Bereich angeben.",
-      sunValuesRequired: "Für die Sonnenstand-Regel bitte alle 4 Werte (Azimuth von/bis, Mindesthöhe, Zielposition) angeben.",
+      sunValuesRequired: "Für die Sonnenstandregel bitte alle vier Werte (Azimut von/bis, Mindesthöhe, Zielposition) angeben.",
       manualPauseCleared: "Automatik-Pause aufgehoben",
       saved: "✓ Gespeichert",
       savedReload: "✓ Gespeichert - Rollläden werden neu geladen…",
       errorPrefix: "Fehler: ",
       invalidInput: "Ungültige Eingabe.",
-      confirmDeleteProfile: "Dieses Custom-Profil wirklich löschen?",
-      confirmDeleteTrigger: "Diesen Externen Trigger wirklich löschen?",
+      confirmDeleteProfile: "Dieses eigene Zeitprofil wirklich löschen?",
+      confirmDeleteTrigger: "Diesen externen Auslöser wirklich löschen?",
       confirmScheduleConflict: (names) => `Überschneidung mit: ${names}. Diese Regel trotzdem so speichern (gewinnt zukünftig gegenüber den genannten Regeln)?`,
       confirmApplyOverrides: (count, name, details) => `${count} ${count === 1 ? "Rollladen hat" : "Rollläden haben"} bereits individuelle Einstellungen für Felder, die "${name}" jetzt überschreiben würde:\n\n${details}\n\nTrotzdem auf ALLE Mitglieder anwenden (inkl. dieser individuellen Einstellungen)?`,
       validationNoName: "Bitte einen Namen vergeben.",
@@ -373,7 +392,7 @@
       validationNoTime: "Bitte mindestens eine Uhrzeit angeben.",
       validationDuplicateName: "Dieser Name wird bereits verwendet.",
       validationNoEntity: "Bitte einen Rollladen auswählen.",
-      conflictReasonTrigger: "Trigger-Typ/Sonnenversatz",
+      conflictReasonTrigger: "Auslösertyp/Sonnenversatz",
       conflictReasonPosition: "Zielposition",
       notePrefix: "Notiz",
     },
@@ -414,7 +433,7 @@
   const CUSTOM_DIRECTION_KEY = "custom";
   const COMPASS_LABELS = {
     en: { north: "North", northeast: "Northeast", east: "East", southeast: "Southeast", south: "South", southwest: "Southwest", west: "West", northwest: "Northwest", custom: "Custom (enter azimuth manually)" },
-    de: { north: "Nord", northeast: "Nordost", east: "Ost", southeast: "Südost", south: "Süd", southwest: "Südwest", west: "West", northwest: "Nordwest", custom: "Benutzerdefiniert (Azimuth manuell)" },
+    de: { north: "Nord", northeast: "Nordost", east: "Ost", southeast: "Südost", south: "Süd", southwest: "Südwest", west: "West", northwest: "Nordwest", custom: "Benutzerdefiniert (Azimut manuell)" },
   };
 
   function detectCompassDirection(from, to) {
@@ -3488,11 +3507,11 @@
       // easier to overview, without hiding a single field.
       html += `<h3>Sensoren &amp; Frostschutz</h3>`;
       html += entityField(
-        "holiday_entity", "Ferien-Entity", bs.holiday_entity,
+        "holiday_entity", "Holiday entity", bs.holiday_entity,
         ["binary_sensor", "input_boolean", "calendar"], "'an' = Ferien aktiv"
       );
       html += entityField(
-        "frost_entity", "Frostschutz-Entity", bs.frost_entity,
+        "frost_entity", "Frost protection entity", bs.frost_entity,
         ["binary_sensor", "input_boolean"], "'an' = keine Bewegung"
       );
       html += entityField(
@@ -3510,13 +3529,13 @@
       );
 
       html += `<h3>Notifications</h3>`;
-      html += field("notify_service", "Notify-Service", bs.notify_service, "text", "z.B. notify.notify, leer = aus");
+      html += field("notify_service", "Notification service", bs.notify_service, "text", "e.g. notify.notify, empty = off");
       html += field(
         "pre_notify_lead_minutes", "Vorwarnung vor dem Schließen (Minuten)",
         bs.pre_notify_lead_minutes, "number"
       );
       html += field(
-        "notification_max_age_minutes", "Vorwarnung-Buttons ignorieren nach (Minuten, 0 = nie)",
+        "notification_max_age_minutes", "Warning button validity (minutes, 0 = unlimited)",
         bs.notification_max_age_minutes, "number"
       );
 
@@ -3524,20 +3543,20 @@
       html += templatesSection.headerHtml;
       if (templatesSection.isOpen) {
       html += textarea(
-        "notify_text_moved", "Template: Bewegungs-Benachrichtigung",
+        "notify_text_moved", "Vorlage: Bewegungsbenachrichtigung",
         bs.notify_text_moved, "Variablen: names, count, action, trigger"
       );
       html += textarea(
-        "notify_text_frost", "Template: Frostschutz-Benachrichtigung",
+        "notify_text_frost", "Vorlage: Frostschutzbenachrichtigung",
         bs.notify_text_frost, "Variablen: names, count"
       );
       html += textarea(
-        "notify_text_preclose", "Template: Vorwarnung vorm Schließen",
+        "notify_text_preclose", "Vorlage: Vorwarnung vor dem Schließen",
         bs.notify_text_preclose, "Variablen: name, time, action"
       );
       }
 
-      html += `<h3>Zeitverhalten &amp; Performance</h3>`;
+      html += `<h3>Timing and delays</h3>`;
       html += field(
         "postpone_options_minutes", "Verschieben-Optionen (Minuten, kommagetrennt)",
         bs.postpone_options_minutes, "text", "z.B. 5,10,15"
@@ -3554,7 +3573,7 @@
       html += field(
         "stagger_delay_ms", "Gestaffelte Befehlsausgabe (Millisekunden, 0 = aus)",
         bs.stagger_delay_ms, "number",
-        "Verzögerung zwischen den einzelnen Rollläden bei Mehrfachaktionen (globaler Zeitplan, Bereich, 'Alle hoch/runter/Stopp') - RF-Kollisionsschutz für funkbasierte Motoren. Bei WLAN-Geräten (z.B. Shelly) normalerweise nicht nötig."
+        "Verzögerung zwischen den einzelnen Rollläden bei Mehrfachaktionen (globaler Zeitplan, Bereich, 'Alle hoch/runter/Stopp') - Funk-Kollisionsschutz für funkbasierte Motoren. Bei WLAN-Geräten (z.B. Shelly) normalerweise nicht nötig."
       );
 
       html += `</div>`;
@@ -3824,8 +3843,8 @@
         </div>
       `;
       if (isCustomDirection) {
-        html += numberField("sun_azimuth_from", "Azimuth von", "°", 0, 360);
-        html += numberField("sun_azimuth_to", "Azimuth bis", "°", 0, 360);
+        html += numberField("sun_azimuth_from", "Azimuth from", "°", 0, 360);
+        html += numberField("sun_azimuth_to", "Azimuth to", "°", 0, 360);
       } else {
         // Compass direction selected: Azimuth fields remain part of the
         // Form (Saving reads them unchanged), but
@@ -3925,7 +3944,7 @@
       `;
       html += `
         <div class="form-field">
-          <label>Notify service for this area</label>
+          <label>Notification service for this area</label>
           <input type="text" data-area-field="notify_service" value="${existing && existing.notify_service ? existing.notify_service : ""}" placeholder="z.B. notify.mobile_app_guest_phone" />
         </div>
       `;
@@ -4116,7 +4135,7 @@
       let html = `<button class="back" data-settings-back-schedules><ha-icon icon="mdi:arrow-left"></ha-icon> Zurück${
         this._editReturnView === "detail" ? " zum Rollladen" : this._editReturnView === "area" ? " zum Bereich" : " zur Liste"
       }</button>`;
-      html += `<h2>${existing ? existing.name : "Neues Custom-Profil"}</h2>`;
+      html += `<h2>${existing ? existing.name : "New custom profile"}</h2>`;
       html += `<div class="form-grid">`;
       html += `
         <div class="form-field">
@@ -4687,7 +4706,7 @@
       let html = `<button class="back" data-settings-back-triggers><ha-icon icon="mdi:arrow-left"></ha-icon> Zurück${
         this._editReturnView === "detail" ? " zum Rollladen" : " zur Liste"
       }</button>`;
-      html += `<h2>${existing ? existing.name : "Neuer Externer Trigger"}</h2>`;
+      html += `<h2>${existing ? existing.name : "New external trigger"}</h2>`;
       html += `<div class="form-grid">`;
       html += `
         <div class="form-field">
@@ -4862,7 +4881,7 @@
       }
       html += `</table>`;
 
-      html += `<h3>Globaler Trigger-Typ &amp; Sonnenversatz</h3>`;
+      html += `<h3>Global trigger type &amp; sun offset</h3>`;
       html += this._renderSelect(e.localType.open, "Typ Öffnen");
       html += this._renderNumberSlider(e.sunOffset.open, "Sonnenversatz Öffnen", " min");
       html += this._renderSelect(e.localType.close, "Typ Schließen");
@@ -4904,6 +4923,9 @@
     connectedCallback() {
       if (this._built) return;
       this._built = true;
+      const panelTitle = String((this._pendingHass && this._pendingHass.language) || "en")
+        .toLowerCase()
+        .startsWith("de") ? "Rollläden" : "Shutters";
 
       this.shadowRoot.innerHTML = `
         <style>
@@ -4930,7 +4952,7 @@
           <button class="menu-btn" id="menu-btn" title="Menü">
             <ha-icon icon="mdi:menu"></ha-icon>
           </button>
-          <h1>Shutters</h1>
+          <h1 id="panel-title">${panelTitle}</h1>
         </div>
         <div class="content"><smart-shutter-card></smart-shutter-card></div>
       `;
@@ -4949,6 +4971,12 @@
     set hass(hass) {
       this._pendingHass = hass;
       if (this._card) this._card.hass = hass;
+      const title = this.shadowRoot.querySelector("#panel-title");
+      if (title) {
+        title.textContent = String((hass && hass.language) || "en").toLowerCase().startsWith("de")
+          ? "Rollläden"
+          : "Shutters";
+      }
     }
 
     set narrow(narrow) {

@@ -16,11 +16,10 @@ skip_action:
       default: close
       selector:
         select:
+          translation_key: trigger_action
           options:
-            - label: Open
-              value: open
-            - label: Close
-              value: close
+            - open
+            - close
     source:
       name: Source
       description: Optional label shown with the override in the dashboard card.
@@ -46,11 +45,10 @@ postpone_action:
       default: close
       selector:
         select:
+          translation_key: trigger_action
           options:
-            - label: Open
-              value: open
-            - label: Close
-              value: close
+            - open
+            - close
     minutes:
       name: Minutes
       description: How many minutes to postpone the action.
@@ -87,11 +85,10 @@ clear_override:
       default: close
       selector:
         select:
+          translation_key: trigger_action
           options:
-            - label: Open
-              value: open
-            - label: Close
-              value: close
+            - open
+            - close
 
 clear_manual_pause:
   name: Clear manual pause
