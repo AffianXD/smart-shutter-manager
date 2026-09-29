@@ -93,10 +93,16 @@ async def test_fresh_entry_registers_entities_services_and_websocket(hass, hass_
     )
     assert profile_entity_id is not None
     assert hass.states.get(profile_entity_id) is not None
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, f"{DOMAIN}_cover.kitchen"), entry.entry_id
-    )
+    device_registry = dr.async_get(hass)
+    device_identifier = (DOMAIN, f"{DOMAIN}_cover.kitchen")
+    if hasattr(device_registry, "async_get_device_by_identifier"):
+        device = device_registry.async_get_device_by_identifier(
+            device_identifier, entry.entry_id
+        )
+    else:
+        device = device_registry.async_get_device(identifiers={device_identifier})
     assert device is not None
+    assert entry.entry_id in device.config_entries
     assert device.name == "Kitchen Rollladen"
 
 
