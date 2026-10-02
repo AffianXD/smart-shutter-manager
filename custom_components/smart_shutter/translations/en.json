@@ -30,7 +30,8 @@
           "custom_schedules_menu": "Manage custom schedules",
           "finish": "Save & close",
           "external_triggers_menu": "Manage external triggers",
-          "rename_shutters": "Rename shutters"
+          "rename_shutters": "Rename shutters",
+          "manage_shutters": "Manage shutters"
         }
       },
       "basic_settings": {
@@ -103,6 +104,13 @@
           "delete": "Delete this trigger"
         }
       },
+      "manage_shutters": {
+        "title": "Manage shutters",
+        "description": "Selected shutters are managed by Smart Shutter Manager. Select additional shutters or deselect existing ones. Removing a shutter deletes its Smart Shutter settings; the original cover entity remains available. Saving reloads the integration.",
+        "data": {
+          "cover_selection": "Shutters"
+        }
+      },
       "rename_shutters": {
         "title": "Rename shutters",
         "description": "Leave blank to use the automatically detected name."
@@ -113,7 +121,8 @@
       "custom_schedule_no_time": "Please provide at least one time (open or close).",
       "external_trigger_no_name": "Please enter a name.",
       "external_trigger_duplicate_name": "This name is already used by another external trigger.",
-      "external_trigger_no_entity": "Please select a shutter."
+      "external_trigger_no_entity": "Please select a shutter.",
+      "invalid_selection": "Select supported cover entities (open/close/stop required)."
     }
   },
   "device": {

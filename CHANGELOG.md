@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased: v0.22.0
+
+- Add admin-only "Manage shutters" to the Smart Shutter settings menu and
+  integration options flow, with selection of existing supported covers.
+- Add or remove shutters after setup while preserving retained names and
+  settings. Keep temporarily missing managed covers selectable.
+- Remove generated devices/entities, area memberships, notes, cover-specific
+  triggers, and active pauses/overrides for removed shutters. Keep the original
+  cover entities, global configuration, shared profiles, and area definitions.
+- Reload through the existing config-entry listener and refresh the card after
+  saving. Add backend and browser coverage for management and access control.
+
 ## Unreleased: v0.21.1
 
 - Localize movement actions, triggers, default notification templates, frost

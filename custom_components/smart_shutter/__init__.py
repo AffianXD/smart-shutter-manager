@@ -41,6 +41,7 @@ from .const import (
 from .coordinator import SmartShutterCoordinator
 from .executor import SchedulerManager
 from .websocket_api import async_register_websocket_commands
+from .shutter_management import async_cleanup_removed_shutters
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Sets up a Smart-Shutter-Config-Entry."""
     hass.data.setdefault(DOMAIN, {})
 
+    async_cleanup_removed_shutters(hass, entry)
     coordinator = SmartShutterCoordinator(hass, entry)
     scheduler_manager = SchedulerManager(hass, coordinator)
 

@@ -57,7 +57,6 @@ from .const import (
     DEFAULT_PRE_NOTIFY_LEAD_MINUTES,
     DOMAIN,
     EXTERNAL_TRIGGER_ID_PREFIX,
-    REQUIRED_COVER_FEATURES,
     SIGNAL_RECOMPUTE,
     WEEKDAY_KEYS,
 )
@@ -65,25 +64,16 @@ from .coordinator import SmartShutterCoordinator
 from .helpers import clean_base_name, get_area_name
 from .scheduler import custom_schedule_matches, find_overlapping_rules
 from .localization import notification_template
+from .shutter_management import (
+    available_covers,
+    async_update_covers,
+    discover_eligible_covers as _discover_eligible_covers,
+)
 
 CONF_COVER_SELECTION = "cover_selection"
 
 _MENU_ADD_NEW = "__add_new__"
 _MENU_DONE = "__done__"
-
-
-@callback
-def _discover_eligible_covers(hass: HomeAssistant) -> dict[str, str]:
-    """Finds all cover.* entities with open/close/stop support.
-
-Return value: Mapping entity_id -> display name, for the selection form."""
-    eligible: dict[str, str] = {}
-    for state in hass.states.async_all("cover"):
-        features = state.attributes.get("supported_features", 0)
-        if features & REQUIRED_COVER_FEATURES == REQUIRED_COVER_FEATURES:
-            friendly_name = state.attributes.get("friendly_name", state.entity_id)
-            eligible[state.entity_id] = f"{friendly_name} ({state.entity_id})"
-    return eligible
 
 
 class SmartShutterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -243,11 +233,43 @@ class SmartShutterOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             menu_options=[
                 "basic_settings",
+                "manage_shutters",
                 "rename_shutters",
                 "custom_schedules_menu",
                 "external_triggers_menu",
                 "finish",
             ],
+        )
+
+    async def async_step_manage_shutters(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Add or remove managed covers without editing individual entities."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            options = dict(self._config_entry.options)
+            if self._pending_schedules is not None:
+                options[CONF_CUSTOM_SCHEDULES] = self._pending_schedules
+            if self._pending_triggers is not None:
+                options[CONF_EXTERNAL_TRIGGERS] = self._pending_triggers
+            try:
+                async_update_covers(self.hass, self._config_entry, user_input.get(CONF_COVER_SELECTION, []), options=options)
+            except ValueError:
+                errors["base"] = "invalid_selection"
+            else:
+                return self.async_create_entry(data=dict(self._config_entry.options))
+        covers = available_covers(self.hass, self._config_entry)
+        return self.async_show_form(
+            step_id="manage_shutters",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_COVER_SELECTION, default=list(self._config_entry.data.get(CONF_COVERS, []))): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[selector.SelectOptionDict(value=entity_id, label=label) for entity_id, label in covers.items()],
+                        multiple=True, mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
+            errors=errors,
         )
 
     async def async_step_finish(

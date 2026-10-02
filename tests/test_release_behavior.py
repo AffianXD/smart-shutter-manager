@@ -57,8 +57,8 @@ def test_all_card_websocket_commands_are_registered(monkeypatch) -> None:
 
     ws.async_register_websocket_commands(object())
 
-    assert len(names) == 12
-    assert len(set(names)) == 12
+    assert len(names) == 14
+    assert len(set(names)) == 14
     assert {"handle_get_config", "handle_save_own_area_settings", "handle_save_own_area_schedules", "handle_get_forecast"} <= set(names)
 
 

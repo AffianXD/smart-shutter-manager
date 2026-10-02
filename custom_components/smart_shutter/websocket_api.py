@@ -58,6 +58,7 @@ from .const import (
     SIGNAL_RECOMPUTE,
 )
 from .scheduler import compute_forecast, find_overlapping_rules
+from .shutter_management import available_covers, async_update_covers
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -859,8 +860,50 @@ Not admin-only: anyone who has access to the area of the shutter (or is an admin
     connection.send_result(msg["id"], {"success": True})
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"): "smart_shutter/get_available_covers",
+    vol.Optional("entry_id"): str,
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_available_covers(hass, connection, msg):
+    """Return supported and already configured covers for the management UI."""
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
+        return
+    connection.send_result(msg["id"], {
+        "entry_id": entry.entry_id,
+        "covers": [{"entity_id": entity_id, "name": label} for entity_id, label in available_covers(hass, entry).items()],
+        "selected": list(entry.data.get(CONF_COVERS, [])),
+    })
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "smart_shutter/save_covers",
+    vol.Optional("entry_id"): str,
+    vol.Required("covers"): [str],
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_save_covers(hass, connection, msg):
+    """Update the managed set; HA's update listener rebuilds the entities."""
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
+        return
+    try:
+        async_update_covers(hass, entry, msg["covers"])
+    except ValueError:
+        connection.send_error(msg["id"], "invalid_selection", "Select supported cover entities.")
+        return
+    connection.send_result(msg["id"], {"success": True})
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """Registers all WebSocket commands of the Custom UI (once per HA process, regardless of the number of Config Entries)."""
+    websocket_api.async_register_command(hass, handle_get_available_covers)
+    websocket_api.async_register_command(hass, handle_save_covers)
     websocket_api.async_register_command(hass, handle_get_config)
     websocket_api.async_register_command(hass, handle_save_basic_settings)
     websocket_api.async_register_command(hass, handle_save_custom_schedules)

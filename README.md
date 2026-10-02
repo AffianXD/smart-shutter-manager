@@ -83,7 +83,13 @@ Assistant user and entity permissions separately before giving guests access.
 ## Configure and use
 
 Open the bundled card to edit schedules, areas, triggers, and per-shutter
-settings. The standard
+settings. Administrators can add or remove managed shutters under **Smart Shutter
+→ Settings → Manage shutters**, or through the integration's **Configure →
+Manage shutters** dialog. Selected covers are managed; deselect a cover to stop
+managing it. Saving reloads the integration. Removing a shutter deletes its
+Smart Shutter device, generated entities, and cover-specific configuration;
+the original cover entity remains available. Retained shutters keep their
+settings, and temporarily missing shutters remain selectable. The standard
 Home Assistant entities and service actions remain available for automations.
 See the reconstructed [development history](HISTORY.md) for past releases.
 The current service action names are `skip_action`,

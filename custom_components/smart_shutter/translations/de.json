@@ -30,7 +30,8 @@
           "custom_schedules_menu": "Eigene Zeitprofile verwalten",
           "finish": "Speichern & schließen",
           "external_triggers_menu": "Externe Auslöser verwalten",
-          "rename_shutters": "Rollläden umbenennen"
+          "rename_shutters": "Rollläden umbenennen",
+          "manage_shutters": "Rollläden verwalten"
         }
       },
       "basic_settings": {
@@ -103,6 +104,13 @@
           "delete": "Diesen Auslöser löschen"
         }
       },
+      "manage_shutters": {
+        "title": "Rollläden verwalten",
+        "description": "Ausgewählte Rollläden werden vom Smart Shutter Manager verwaltet. Wähle weitere aus oder entferne die Auswahl. Beim Entfernen werden die Smart-Shutter-Einstellungen dieses Rollladens gelöscht; die ursprüngliche cover-Entität bleibt erhalten. Speichern lädt die Integration neu.",
+        "data": {
+          "cover_selection": "Rollläden"
+        }
+      },
       "rename_shutters": {
         "title": "Rollläden umbenennen",
         "description": "Leer lassen, um den automatisch ermittelten Namen zu verwenden."
@@ -113,7 +121,8 @@
       "custom_schedule_no_time": "Bitte mindestens eine Uhrzeit (Öffnen oder Schließen) angeben.",
       "external_trigger_no_name": "Bitte einen Namen vergeben.",
       "external_trigger_duplicate_name": "Dieser Name wird bereits von einem anderen externen Auslöser verwendet.",
-      "external_trigger_no_entity": "Bitte einen Rollladen auswählen."
+      "external_trigger_no_entity": "Bitte einen Rollladen auswählen.",
+      "invalid_selection": "Bitte nur passende cover-Entitäten auswählen (Öffnen/Schließen/Stopp erforderlich)."
     }
   },
   "device": {
