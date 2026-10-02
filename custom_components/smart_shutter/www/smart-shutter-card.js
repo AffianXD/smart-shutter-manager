@@ -211,6 +211,8 @@
       "Close automation: On": "Automatik Schließen: An",
       "Close automation: Off": "Automatik Schließen: Aus",
       "Automation partially off": "Automatik teilweise aus",
+      "Automation disabled": "Automatik aus",
+      "Automation enabled": "Automatik an",
       "Open automation: On": "Automatik Öffnen: An",
       "Open automation: Off": "Automatik Öffnen: Aus",
       "Basic Settings": "Basis-Einstellungen",
@@ -498,6 +500,7 @@
 
     set hass(hass) {
       this._hass = hass;
+      this._subscribeDeviceRegistry();
       if (!this._loaded) {
         this._loaded = true;
         this._loadRegistries(); // ruft am Ende einmalig _render() auf
@@ -510,6 +513,56 @@
         // in the interaction destroy. A complete re-structure gives
         // it only happens during navigation (see _onClick).
         this._updateValues();
+      }
+    }
+
+    connectedCallback() {
+      this._subscribeDeviceRegistry();
+    }
+
+    disconnectedCallback() {
+      this._stopDeviceRegistrySubscription();
+      this._deviceRegistryConnection = null;
+    }
+
+    _stopDeviceRegistrySubscription() {
+      const unsubscribe = this._unsubscribeDeviceRegistry;
+      this._unsubscribeDeviceRegistry = null;
+      if (unsubscribe) unsubscribe();
+    }
+
+    async _subscribeDeviceRegistry() {
+      const connection = this._hass && this._hass.connection;
+      if (!this.isConnected || !connection || !connection.subscribeEvents ||
+          connection === this._deviceRegistryConnection) return;
+      this._stopDeviceRegistrySubscription();
+      this._deviceRegistryConnection = connection;
+      try {
+        const unsubscribe = await connection.subscribeEvents((event) => {
+          const devices = this._model && (this._model.allShutters || this._model.shutters);
+          if (devices && event.data && devices.some((s) => s.deviceId === event.data.device_id)) {
+            this._refreshDeviceNames();
+          }
+        }, "device_registry_updated");
+        if (this._deviceRegistryConnection === connection) this._unsubscribeDeviceRegistry = unsubscribe;
+        else unsubscribe();
+      } catch (err) {
+        if (this._deviceRegistryConnection === connection) this._deviceRegistryConnection = null;
+      }
+    }
+
+    async _refreshDeviceNames() {
+      try {
+        const devices = await this._hass.callWS({ type: "config/device_registry/list" });
+        if (!this._model || !this.isConnected) return;
+        const byId = new Map(devices.map((device) => [device.id, device]));
+        for (const shutter of this._model.allShutters || this._model.shutters) {
+          const device = byId.get(shutter.deviceId);
+          if (device) shutter.name = device.name_by_user || device.name || shutter.coverEntityId;
+        }
+        this._updateValues();
+      } catch (err) {
+        // Keep the last registry names if Home Assistant is temporarily unavailable.
       }
     }
 
@@ -2132,6 +2185,10 @@
     _updateValues() {
       const body = this.shadowRoot.querySelector(".body");
       if (!body) return;
+      body.querySelectorAll("[data-shutter-name]").forEach((el) => {
+        const shutter = this._shutterByDeviceId(el.getAttribute("data-shutter-name"));
+        if (shutter) el.textContent = shutter.name;
+      });
       this._syncControlValues(body);
       this._mountEntityPickers(body);
 
@@ -2271,11 +2328,18 @@
       const shutters = this._model.shutters;
       const total = shutters.length;
       let automationOff = 0;
+      let automationFullyOff = 0;
+      const globalAutomation = this._model.globalEntities.automation;
+      const globalOpen = this._state(globalAutomation.open && globalAutomation.open.entity_id);
+      const globalClose = this._state(globalAutomation.close && globalAutomation.close.entity_id);
       const groups = new Map();
       for (const s of shutters) {
         const openSw = this._state(s.entities.automation.open && s.entities.automation.open.entity_id);
         const closeSw = this._state(s.entities.automation.close && s.entities.automation.close.entity_id);
-        if ((openSw && openSw.state === "off") || (closeSw && closeSw.state === "off")) automationOff += 1;
+        const openOff = (globalOpen && globalOpen.state === "off") || (openSw && openSw.state === "off");
+        const closeOff = (globalClose && globalClose.state === "off") || (closeSw && closeSw.state === "off");
+        if (openOff || closeOff) automationOff += 1;
+        if (openOff && closeOff) automationFullyOff += 1;
         const na = this._state(s.entities.nextAction && s.entities.nextAction.entity_id);
         if (na && na.attributes && na.attributes.scheduled_at) {
           const ts = Date.parse(na.attributes.scheduled_at);
@@ -2315,12 +2379,13 @@
           <div class="ssm-stat">
             <ha-icon icon="mdi:toggle-switch-off-outline"></ha-icon>
             <div class="ssm-stat-num">${automationOff}</div>
-            <div class="ssm-stat-label">Automation partially off</div>
+            <div class="ssm-stat-label">${total > 0 && automationFullyOff === total
+              ? "Automation disabled" : automationOff > 0 ? "Automation partially off" : "Automation enabled"}</div>
           </div>
         </div>
         ${
           nextLabel
-            ? `<div class="ssm-next-action"><ha-icon icon="mdi:clock-outline"></ha-icon><span>Next action: <strong>${nextLabel}</strong></span></div>`
+            ? `<div class="ssm-next-action"><ha-icon icon="mdi:clock-outline"></ha-icon><span>Next action: <strong>${this._escapeHtml(nextLabel)}</strong></span></div>`
             : ""
         }
       `;
@@ -2571,7 +2636,7 @@
       group.shutters.forEach((s) => {
         html += `
           <div class="control-row">
-            <label>${s.name}</label>
+            <label data-shutter-name="${s.deviceId}">${this._escapeHtml(s.name)}</label>
             <button data-global-tl-edit-shutter="${s.deviceId}">Edit for this Shutter</button>
           </div>
         `;
@@ -2690,7 +2755,7 @@
         <div class="row" data-open-detail="${s.deviceId}">
           ${checkbox}
           <div class="main">
-            <div class="name">${s.name}</div>
+            <div class="name" data-shutter-name="${s.deviceId}">${this._escapeHtml(s.name)}</div>
             <div class="meta" data-row-meta="${s.deviceId}">${this._rowMetaHtml(s)}</div>
           </div>
           ${this._quickActionsHtml(s.coverEntityId)}
@@ -2718,7 +2783,7 @@
 
       let html = `<button class="back" data-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Overview</button>`;
       html += `<div class="ssm-card ssm-detail-header">`;
-      html += `<h2 class="clickable-title" data-open-more-info="${s.coverEntityId}" title="Home-Assistant-Entität öffnen">${s.name}${s.areaName ? ` <span class="pill">${s.areaName}</span>` : ""}</h2>`;
+      html += `<h2 class="clickable-title" data-open-more-info="${s.coverEntityId}" title="Home-Assistant-Entität öffnen"><span data-shutter-name="${s.deviceId}">${this._escapeHtml(s.name)}</span>${s.areaName ? ` <span class="pill">${s.areaName}</span>` : ""}</h2>`;
       html += `<div class="meta" data-detail-state="${s.deviceId}">${this._detailStateText(s)}</div>`;
       html += this._quickActionsHtml(s.coverEntityId);
       html += `</div>`;
@@ -4062,7 +4127,7 @@
           html += `
             <label class="control-row">
               <input type="checkbox" data-area-member="${s.coverEntityId}" ${checked ? "checked" : ""} />
-              <span>${s.name}${otherAreaNames.length ? ` <span class="meta">(${this._language() === "de" ? "auch" : "also"}: ${otherAreaNames.join(", ")})</span>` : ""}</span>
+              <span><span data-shutter-name="${s.deviceId}">${this._escapeHtml(s.name)}</span>${otherAreaNames.length ? ` <span class="meta">(${this._language() === "de" ? "auch" : "also"}: ${otherAreaNames.join(", ")})</span>` : ""}</span>
             </label>
           `;
         });
