@@ -18,8 +18,13 @@ English and German labels over stable underlying values.
 | Pause attributes `manuelle_pause_aktiv`, `manuelle_pause_bis` | `manual_pause_active`, `manual_pause_until` | Update templates using these attributes. |
 | Sun notification template variables `bereich`, `minuten` | `area`, `minutes` | New templates use the English names. Existing saved templates keep working through compatibility aliases. |
 
-Default notification wording is now English. Saved custom notification templates
-are preserved without rewriting their text.
+In v0.21.0, default notification wording is English. From v0.21.1, built-in
+notification templates and display variables follow the configured Home Assistant
+language. Saved custom notification templates are preserved without rewriting
+their text. For language-independent comparisons, movement templates can use
+`action_raw` and `trigger_raw`; pre-close templates can use `action_raw`.
+Next-action sensor states are display text; use the stable `action` and
+`scheduled_at` attributes in automations.
 The integration's device display name now uses "Shutter" and its global device
 model uses "Global settings". Registered entity IDs and unique IDs are kept.
 

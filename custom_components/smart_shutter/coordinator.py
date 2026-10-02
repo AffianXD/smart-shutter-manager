@@ -54,6 +54,7 @@ from .const import (
 )
 from .helpers import clean_base_name, get_area_name, get_ha_area_id, find_temperature_sensor_in_area
 from .storage import ActionOverrideStore
+from .localization import notification_template
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -421,20 +422,27 @@ A shutter without area override AND without global notify_service returns None (
     def notify_text_moved(self) -> str:
         """Jinja-Template for the motion notification (Options Flow).
         Variables: names, count, action, trigger."""
-        return self.entry.options.get(CONF_NOTIFY_TEXT_MOVED, DEFAULT_NOTIFY_TEXT_MOVED)
+        return notification_template(
+            self.hass, CONF_NOTIFY_TEXT_MOVED,
+            self.entry.options.get(CONF_NOTIFY_TEXT_MOVED), DEFAULT_NOTIFY_TEXT_MOVED,
+        )
 
     @property
     def notify_text_frost(self) -> str:
         """Jinja-Template for the frost protection notification (Options Flow).
         Variables: names, count."""
-        return self.entry.options.get(CONF_NOTIFY_TEXT_FROST, DEFAULT_NOTIFY_TEXT_FROST)
+        return notification_template(
+            self.hass, CONF_NOTIFY_TEXT_FROST,
+            self.entry.options.get(CONF_NOTIFY_TEXT_FROST), DEFAULT_NOTIFY_TEXT_FROST,
+        )
 
     @property
     def notify_text_preclose(self) -> str:
         """Jinja-Template for the warning before closing (Options Flow).
         Variables: name, time, action."""
-        return self.entry.options.get(
-            CONF_NOTIFY_TEXT_PRECLOSE, DEFAULT_NOTIFY_TEXT_PRECLOSE
+        return notification_template(
+            self.hass, CONF_NOTIFY_TEXT_PRECLOSE,
+            self.entry.options.get(CONF_NOTIFY_TEXT_PRECLOSE), DEFAULT_NOTIFY_TEXT_PRECLOSE,
         )
 
     @property

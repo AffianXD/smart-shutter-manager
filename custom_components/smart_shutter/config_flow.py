@@ -64,6 +64,7 @@ from .const import (
 from .coordinator import SmartShutterCoordinator
 from .helpers import clean_base_name, get_area_name
 from .scheduler import custom_schedule_matches, find_overlapping_rules
+from .localization import notification_template
 
 CONF_COVER_SELECTION = "cover_selection"
 
@@ -341,10 +342,17 @@ class SmartShutterOptionsFlow(config_entries.OptionsFlow):
         current_notification_max_age = options.get(
             CONF_NOTIFICATION_MAX_AGE, DEFAULT_NOTIFICATION_MAX_AGE_MINUTES
         )
-        current_text_moved = options.get(CONF_NOTIFY_TEXT_MOVED, DEFAULT_NOTIFY_TEXT_MOVED)
-        current_text_frost = options.get(CONF_NOTIFY_TEXT_FROST, DEFAULT_NOTIFY_TEXT_FROST)
-        current_text_preclose = options.get(
-            CONF_NOTIFY_TEXT_PRECLOSE, DEFAULT_NOTIFY_TEXT_PRECLOSE
+        current_text_moved = notification_template(
+            self.hass, CONF_NOTIFY_TEXT_MOVED,
+            options.get(CONF_NOTIFY_TEXT_MOVED), DEFAULT_NOTIFY_TEXT_MOVED,
+        )
+        current_text_frost = notification_template(
+            self.hass, CONF_NOTIFY_TEXT_FROST,
+            options.get(CONF_NOTIFY_TEXT_FROST), DEFAULT_NOTIFY_TEXT_FROST,
+        )
+        current_text_preclose = notification_template(
+            self.hass, CONF_NOTIFY_TEXT_PRECLOSE,
+            options.get(CONF_NOTIFY_TEXT_PRECLOSE), DEFAULT_NOTIFY_TEXT_PRECLOSE,
         )
 
         schema = vol.Schema(

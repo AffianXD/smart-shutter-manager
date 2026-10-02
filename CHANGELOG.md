@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased: v0.21.1
+
+- Localize movement actions, triggers, default notification templates, frost
+  messages, sun-rule messages, and early-warning buttons in German.
+- Show German next-action sensor text for both individual and global previews;
+  use an explicit date for actions later than tomorrow.
+- Preserve custom templates, entity IDs, and language-neutral event/attribute
+  values. Notification templates can use `action_raw` and `trigger_raw` when
+  they need the original values for comparisons.
+- Add backend regression coverage for German, English fallback, custom and
+  invalid templates, notification buttons, and next-action attributes.
+
 ## Unreleased: v0.21.0
 
 This is the first public repository release candidate. It packages the

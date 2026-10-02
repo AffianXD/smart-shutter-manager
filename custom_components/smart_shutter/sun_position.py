@@ -20,6 +20,7 @@ import homeassistant.util.dt as dt_util
 
 from .coordinator import SmartShutterCoordinator
 from .helpers import render_notify_template
+from .localization import notification_template, is_german
 from .storage import EventHistoryStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -218,7 +219,9 @@ class SunPositionMonitor:
         if not notify_service or "." not in notify_service:
             return
 
-        template_str = (area.get("sun_prenotify_text") or "").strip() or DEFAULT_SUN_PRENOTIFY_TEXT
+        template_str = notification_template(
+            self.hass, "sun_prenotify_text", (area.get("sun_prenotify_text") or "").strip(), DEFAULT_SUN_PRENOTIFY_TEXT,
+        )
         variables = {
             "area": area.get("name"),
             "bereich": area.get("name"),
@@ -231,7 +234,8 @@ class SunPositionMonitor:
             self.hass,
             template_str,
             variables,
-            fallback=f"Sun position rule '{area.get('name')}': shutters will move shortly.",
+            fallback=(f"Sonnenstandsregel '{area.get('name')}': Rollläden fahren in Kürze."
+                      if is_german(self.hass) else f"Sun position rule '{area.get('name')}': shutters will move shortly."),
         )
         domain, service = notify_service.split(".", 1)
         try:
@@ -317,7 +321,9 @@ Since v0.17, 'outside_temp' and 'inside_temp' (float or None, see coordinator.ar
         if not notify_service or "." not in notify_service:
             return
 
-        template_str = (area.get("sun_notify_text") or "").strip() or DEFAULT_SUN_NOTIFY_TEXT
+        template_str = notification_template(
+            self.hass, "sun_notify_text", (area.get("sun_notify_text") or "").strip(), DEFAULT_SUN_NOTIFY_TEXT,
+        )
         variables = {
             "area": area.get("name"),
             "bereich": area.get("name"),
@@ -329,7 +335,8 @@ Since v0.17, 'outside_temp' and 'inside_temp' (float or None, see coordinator.ar
             self.hass,
             template_str,
             variables,
-            fallback=f"Sun position rule '{area.get('name')}': moved {len(names)} shutters to {target_position}%.",
+            fallback=(f"Sonnenstandsregel '{area.get('name')}': {len(names)} {'Rollladen' if len(names) == 1 else 'Rollläden'} auf {target_position}% gefahren."
+                      if is_german(self.hass) else f"Sun position rule '{area.get('name')}': moved {len(names)} shutters to {target_position}%."),
         )
         domain, service = notify_service.split(".", 1)
         try:

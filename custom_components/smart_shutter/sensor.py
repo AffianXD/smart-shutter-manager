@@ -17,6 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
+import homeassistant.util.dt as dt_util
 
 from .const import (
     ACTION_OPEN,
@@ -27,6 +28,7 @@ from .const import (
     SIGNAL_RECOMPUTE,
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
+from .localization import display_text, is_german
 from .scheduler import ShutterSchedule, compute_global_schedule, compute_schedule
 
 _LOGGER = logging.getLogger(__name__)
@@ -231,17 +233,21 @@ def _apply_next_action(sensor: _BaseScheduleSensor, schedule: ShutterSchedule) -
 
     if next_action is None:
         if not schedule.open_automation_enabled and not schedule.close_automation_enabled:
-            sensor._attr_native_value = "Automation disabled"
+            sensor._attr_native_value = display_text(sensor.hass, "Automation disabled")
         else:
-            sensor._attr_native_value = "Unknown"
+            sensor._attr_native_value = display_text(sensor.hass, "Unknown")
         sensor._attr_extra_state_attributes = debug_attrs
         return
 
     action, when = next_action
     action_label = "open" if action == ACTION_OPEN else "close"
-    day_label = "Today" if when.date() == when.now(when.tzinfo).date() else "Tomorrow"
+    days_ahead = (when.date() - dt_util.now().astimezone(when.tzinfo).date()).days
+    if days_ahead in (0, 1):
+        day_label = display_text(sensor.hass, "Today" if days_ahead == 0 else "Tomorrow")
+    else:
+        day_label = when.strftime("%d.%m.%Y" if is_german(sensor.hass) else "%Y-%m-%d")
 
-    sensor._attr_native_value = f"{day_label} {when.strftime('%H:%M')} {action_label}"
+    sensor._attr_native_value = f"{day_label} {when.strftime('%H:%M')} {display_text(sensor.hass, action_label)}"
     sensor._attr_extra_state_attributes = {
         "action": action_label,
         "scheduled_at": when.isoformat(),

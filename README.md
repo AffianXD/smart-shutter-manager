@@ -92,7 +92,11 @@ The current service action names are `skip_action`,
 
 The card follows the Home Assistant UI language for English and German, with
 English as the fallback. Home Assistant configuration flows and entity labels
-also have English and German translations.
+also have English and German translations. Backend notification text and
+next-action sensor text follow the configured Home Assistant language. Custom
+notification templates are preserved; `action` and `trigger` are display text,
+while `action_raw` and `trigger_raw` provide the original values for template
+comparisons (`trigger_raw` is available for movement notifications).
 
 ## Upgrading from v0.20.x
 

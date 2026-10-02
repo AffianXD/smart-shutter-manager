@@ -51,9 +51,6 @@ from .const import (
     DEFAULT_NOTIFICATION_MAX_AGE_MINUTES,
     DEFAULT_STAGGER_DELAY_MS,
     MAX_STAGGER_DELAY_MS,
-    DEFAULT_NOTIFY_TEXT_FROST,
-    DEFAULT_NOTIFY_TEXT_MOVED,
-    DEFAULT_NOTIFY_TEXT_PRECLOSE,
     DEFAULT_POSTPONE_OPTIONS_MINUTES,
     DEFAULT_PRE_NOTIFY_LEAD_MINUTES,
     DOMAIN,
@@ -183,11 +180,9 @@ async def handle_get_config(hass, connection, msg):
                 CONF_MANUAL_PAUSE_MINUTES, DEFAULT_MANUAL_PAUSE_MINUTES
             ),
             "stagger_delay_ms": options.get(CONF_STAGGER_DELAY_MS, DEFAULT_STAGGER_DELAY_MS),
-            "notify_text_moved": options.get(CONF_NOTIFY_TEXT_MOVED, DEFAULT_NOTIFY_TEXT_MOVED),
-            "notify_text_frost": options.get(CONF_NOTIFY_TEXT_FROST, DEFAULT_NOTIFY_TEXT_FROST),
-            "notify_text_preclose": options.get(
-                CONF_NOTIFY_TEXT_PRECLOSE, DEFAULT_NOTIFY_TEXT_PRECLOSE
-            ),
+            "notify_text_moved": coordinator.notify_text_moved,
+            "notify_text_frost": coordinator.notify_text_frost,
+            "notify_text_preclose": coordinator.notify_text_preclose,
         }
         if allowed_area_ids is None
         else {}

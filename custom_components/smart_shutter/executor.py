@@ -58,6 +58,7 @@ from .const import (
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
 from .helpers import render_notify_template
+from .localization import display_text, is_german
 from .manual_intervention import ManualInterventionGuard
 from .scheduler import (
     determine_active_profile,
@@ -155,7 +156,8 @@ class NotificationBatcher:
                 self.hass,
                 self._coordinator.notify_text_frost,
                 {"names": names, "count": len(frost)},
-                fallback=f"Frost protection active: {names} will not move.",
+                fallback=(f"Frostschutz aktiv: {names} {'wird' if len(frost) == 1 else 'werden'} nicht bewegt."
+                          if is_german(self.hass) else f"Frost protection active: {names} will not move."),
             )
             messages.append(text)
 
@@ -177,8 +179,10 @@ exactly this one shutter."""
         message = _render_template(
             self.hass,
             self._coordinator.notify_text_preclose,
-            {"name": shutter.name, "time": target_dt.strftime("%H:%M"), "action": action},
-            fallback=f"{shutter.name} closes at {target_dt.strftime('%H:%M')}.",
+            {"name": shutter.name, "time": target_dt.strftime("%H:%M"),
+             "action": display_text(self.hass, action), "action_raw": action},
+            fallback=(f"{shutter.name} schließt um {target_dt.strftime('%H:%M')} Uhr."
+                      if is_german(self.hass) else f"{shutter.name} closes at {target_dt.strftime('%H:%M')}."),
         )
 
         # Android/iOS reliably show up to 3 action buttons only -
@@ -196,7 +200,7 @@ exactly this one shutter."""
         actions.append(
             {
                 "action": f"{_ACTION_PREFIX}|skip|{shutter.entity_id}|{action}",
-                "title": "Skip today",
+                "title": display_text(self.hass, "Skip today"),
             }
         )
 
@@ -205,7 +209,7 @@ exactly this one shutter."""
         # (5/15/60 Min) instead of our own actions.
         await self._call_notify(
             notify_service,
-            "Shutter closing soon",
+            display_text(self.hass, "Shutter closing soon"),
             message,
             extra_data={"actions": actions},
         )
@@ -242,12 +246,15 @@ exactly this one shutter."""
                 {
                     "names": joined,
                     "count": len(names),
-                    "action": action_label,
-                    "trigger": trigger_label,
+                    "action": display_text(self.hass, action_label),
+                    "trigger": display_text(self.hass, trigger_label),
+                    "action_raw": action_label,
+                    "trigger_raw": trigger_label,
                 },
                 fallback=(
-                    f"{joined} {'was' if len(names) == 1 else 'were'} "
-                    f"{action_label}. Trigger: {trigger_label}."
+                    f"{joined} {display_text(self.hass, 'was' if len(names) == 1 else 'were')} "
+                    f"{display_text(self.hass, action_label)}. "
+                    f"{display_text(self.hass, 'Trigger')}: {display_text(self.hass, trigger_label)}."
                 ),
             )
             lines.append(text)
