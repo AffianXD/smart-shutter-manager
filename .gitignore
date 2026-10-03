@@ -15,7 +15,11 @@ playwright-report/
 .playwright-browsers/
 .playwright-tmp/
 *.log
-docs/
+docs/*
+!docs/local-home-assistant.md
+.runtime/
+.env
+.env.local
 old_versions/
 .github/agents/
 .github/hooks/

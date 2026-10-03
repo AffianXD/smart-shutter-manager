@@ -1,0 +1,7 @@
+services:
+  homeassistant:
+    ports:
+      - target: 8123
+        published: "${TEST_PORT:-8123}"
+        host_ip: 127.0.0.1
+        protocol: tcp

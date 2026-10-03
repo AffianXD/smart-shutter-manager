@@ -1,0 +1,25 @@
+# Local virtual-only configuration. Never seed from a real HA installation.
+homeassistant:
+  name: Smart Shutter Local
+  latitude: 51.0
+  longitude: 7.5
+  elevation: 0
+  unit_system: metric
+  time_zone: Europe/Berlin
+  packages: !include_dir_named packages
+frontend:
+config:
+api:
+websocket_api:
+auth:
+onboarding:
+person:
+zone:
+sun:
+history:
+logbook:
+recorder:
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+codex_ui_test:

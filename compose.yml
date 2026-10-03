@@ -1,0 +1,28 @@
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:-2026.9.4}
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - type: bind
+        source: ${HA_CONFIG_DIR:-./.runtime/preview/config}
+        target: /config
+        bind:
+          create_host_path: false
+    labels:
+      io.smart-shutter.local: "1"
+      io.smart-shutter.repository: ${HA_REPOSITORY_ID:-unmanaged}
+      io.smart-shutter.instance: ${HA_INSTANCE_ID:-preview}
+      io.smart-shutter.mode: ${HA_MODE:-preview}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/', timeout=5).close()"
+      interval: 10s
+      timeout: 6s
+      start_period: 60s
+      retries: 12
+    restart: "no"

@@ -1,0 +1,20 @@
+services:
+  homeassistant:
+    ports:
+      - target: 8123
+        published: "0"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ${HA_SOURCE_DIR:-./custom_components/smart_shutter}
+        target: /config/custom_components/smart_shutter
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HA_FIXTURE_DIR:-./docker/fixtures/codex_ui_test}
+        target: /config/custom_components/codex_ui_test
+        read_only: true
+        bind:
+          create_host_path: false
