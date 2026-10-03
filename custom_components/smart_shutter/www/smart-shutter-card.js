@@ -523,6 +523,11 @@
     disconnectedCallback() {
       this._stopDeviceRegistrySubscription();
       this._deviceRegistryConnection = null;
+      if (this._managedCoversSaveTimer) {
+        clearTimeout(this._managedCoversSaveTimer);
+        this._managedCoversSaveTimer = null;
+        this._saveManagedCovers();
+      }
     }
 
     _stopDeviceRegistrySubscription() {
@@ -558,7 +563,10 @@
         const byId = new Map(devices.map((device) => [device.id, device]));
         for (const shutter of this._model.allShutters || this._model.shutters) {
           const device = byId.get(shutter.deviceId);
-          if (device) shutter.name = device.name_by_user || device.name || shutter.coverEntityId;
+          if (device) {
+            shutter.name = device.name_by_user || device.name || shutter.coverEntityId;
+            shutter.userName = device.name_by_user;
+          }
         }
         this._updateValues();
       } catch (err) {
@@ -566,7 +574,7 @@
       }
     }
 
-    async _loadRegistries() {
+    async _loadRegistries(render = true) {
       const hass = this._hass;
       try {
         const [entities, devices, areas] = await Promise.all([
@@ -600,7 +608,7 @@
         this._loadError =
           "Registry-Daten konnten nicht geladen werden: " + (err && err.message ? err.message : String(err));
       }
-      this._render();
+      if (render) this._render();
     }
 
     _isAdmin() {
@@ -758,6 +766,7 @@
           deviceId: device.id,
           coverEntityId,
           name: device.name_by_user || device.name || coverEntityId,
+          userName: device.name_by_user,
           areaName: area ? area.name : null,
           floorName: floor ? floor.name : "Ohne Geschoss",
           floorLevel: floor && typeof floor.level === "number" ? floor.level : 9999,
@@ -1489,6 +1498,10 @@
           border: 1px solid var(--ssm-border); background: var(--ssm-card-bg); color: inherit; font-family: inherit;
         }
         .entity-picker-slot ha-entity-picker { width: 100%; display: block; }
+        .managed-cover-row { margin-bottom: 20px; min-width: 0; overflow-wrap: anywhere; }
+        .managed-cover-row .control-row { margin-bottom: 6px; flex-wrap: nowrap; align-items: flex-start; }
+        .managed-cover-row .control-row span { flex: 1; min-width: 0; }
+        .managed-cover-row input[type="checkbox"] { flex-shrink: 0; margin-top: 3px; }
         .form-field textarea { min-height: 60px; resize: vertical; }
         .form-field .meta, .meta { font-size: 0.8em; color: var(--ssm-muted); margin-top: 4px; }
         .save-btn {
@@ -1874,13 +1887,8 @@
         this._saveTrigger();
         return;
       }
-      if (ev.target.closest("[data-save-covers]")) {
+      if (ev.target.closest("[data-retry-covers]")) {
         this._saveManagedCovers();
-        return;
-      }
-      const saveRenameBtn = ev.target.closest("[data-save-rename]");
-      if (saveRenameBtn) {
-        this._saveRename();
         return;
       }
       // Keep these actions ahead of the containing row click handler.
@@ -2071,6 +2079,25 @@
     }
 
     _onChange(ev) {
+      const managedCover = ev.target.closest("[data-managed-cover]");
+      if (managedCover) {
+        const id = managedCover.getAttribute("data-managed-cover");
+        const de = this._language() === "de";
+        if (!managedCover.checked && !window.confirm(de
+          ? "Rollladen aus Smart Shutter entfernen? Seine Smart-Shutter-Einstellungen werden gelöscht. Die ursprüngliche cover-Entität bleibt erhalten."
+          : "Remove this shutter from Smart Shutter? Its Smart Shutter settings will be deleted. The original cover entity remains available.")) {
+          managedCover.checked = true;
+          return;
+        }
+        this._managedCoverSelection = managedCover.checked
+          ? [...new Set([...this._managedCoverSelection, id])]
+          : this._managedCoverSelection.filter((selected) => selected !== id);
+        if (managedCover.checked) this._managedCoverNameChanges[id] = this._managedCoverNames[id] || "";
+        const nameInput = managedCover.closest("[data-managed-cover-row]").querySelector("[data-managed-cover-name]");
+        nameInput.disabled = !managedCover.checked;
+        this._queueManagedCoverSave(0);
+        return;
+      }
       const triggerTargetModeSel = ev.target.closest("select[data-trigger-target-mode]");
       if (triggerTargetModeSel) {
         this._haptic("selection");
@@ -2134,6 +2161,14 @@
     }
 
     _onInput(ev) {
+      const managedName = ev.target.closest("[data-managed-cover-name]");
+      if (managedName) {
+        const id = managedName.getAttribute("data-managed-cover-name");
+        this._managedCoverNames[id] = managedName.value;
+        this._managedCoverNameChanges[id] = managedName.value;
+        this._queueManagedCoverSave(700);
+        return;
+      }
       const slider = ev.target.closest("[data-slider-group]");
       if (slider) {
         // Immediate live coupling between slider and number field, WITHOUT
@@ -2276,8 +2311,6 @@
         body.innerHTML = this._renderTriggerEdit();
       } else if (this._view === "settings-shutters") {
         body.innerHTML = this._renderSettingsShutters();
-      } else if (this._view === "settings-rename") {
-        body.innerHTML = this._renderSettingsRename();
       } else if (this._view === "settings-areas") {
         body.innerHTML = this._renderSettingsAreas();
       } else if (this._view === "settings-area-edit") {
@@ -3456,7 +3489,7 @@
           ${this._isAdmin() ? `<button class="settings-menu-item" data-settings-nav="settings-shutters">
             <ha-icon icon="mdi:window-shutter-cog"></ha-icon>
             <div><div class="name">${this._language() === "de" ? "Rollläden verwalten" : "Manage shutters"}</div>
-            <div class="meta">${this._language() === "de" ? "Weitere Rollläden hinzufügen oder entfernen" : "Add or remove managed shutters"}</div></div>
+            <div class="meta">${this._language() === "de" ? "Rollläden hinzufügen, entfernen oder umbenennen" : "Add, remove, or rename shutters"}</div></div>
           </button>` : ""}
           <button class="settings-menu-item" data-settings-nav="settings-basic">
             <ha-icon icon="mdi:cog"></ha-icon>
@@ -3473,10 +3506,6 @@
           <button class="settings-menu-item" data-settings-nav="settings-areas">
             <ha-icon icon="mdi:compass-outline"></ha-icon>
             <div><div class="name">Areas</div><div class="meta">e.g. Front/Back/North/South - own groups with presets</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-rename">
-            <ha-icon icon="mdi:rename-box"></ha-icon>
-            <div><div class="name">Rename shutters</div><div class="meta"></div></div>
           </button>
           <button class="settings-menu-item" data-settings-nav="settings-global">
             <ha-icon icon="mdi:earth"></ha-icon>
@@ -4894,18 +4923,27 @@
     }
 
     async _loadManagedCovers() {
-      if (!this._isAdmin()) return;
+      if (!this._isAdmin() || this._savingManagedCovers || this._managedCoversSavePending || this._managedCoversSaveError || this._loadingManagedCovers) return;
+      this._loadingManagedCovers = true;
       this._managedCovers = null;
       this._managedCoversError = null;
       this._managedCoversStatus = "";
-      this._managedCoverSelection = null;
+      this._managedCoverNameChanges = {};
       try {
         this._managedCovers = await this._hass.callWS({
           type: "smart_shutter/get_available_covers",
           entry_id: this._backendConfig && this._backendConfig.entry_id,
         });
+        this._managedCoverSelection = [...this._managedCovers.selected];
+        this._managedCoverNames = { ...this._managedCovers.names };
+        // Show HA user-defined names too; only edited names are sent back.
+        for (const shutter of (this._model && this._model.shutters) || []) {
+          if (shutter.userName) this._managedCoverNames[shutter.coverEntityId] = shutter.userName;
+        }
       } catch (err) {
         this._managedCoversError = err && err.message ? err.message : String(err);
+      } finally {
+        this._loadingManagedCovers = false;
       }
       if (this._view === "settings-shutters") this._render();
     }
@@ -4918,45 +4956,80 @@
       if (this._managedCoversError) return html + `<div class="hint error">${this._escapeHtml(this._managedCoversError)}</div>`;
       if (!this._managedCovers) return html + `<p>${de ? "Rollläden werden geladen…" : "Loading shutters…"}</p>`;
       html += `<p class="meta">${de
-        ? "Ausgewählte Rollläden werden vom Smart Shutter Manager verwaltet. Wähle weitere aus oder entferne die Auswahl. Speichern lädt die Integration neu."
-        : "Selected shutters are managed by Smart Shutter Manager. Select additional shutters or deselect existing ones. Saving reloads the integration."}</p>`;
+        ? "Rollläden auswählen und Namen bearbeiten. Änderungen werden automatisch gespeichert. Ein leeres Namensfeld verwendet den Standardnamen."
+        : "Select shutters and edit their names. Changes are saved automatically. An empty name field uses the default name."}</p>`;
       html += `<p class="hint">${de
         ? "Beim Entfernen werden die Smart-Shutter-Einstellungen dieses Rollladens gelöscht. Die ursprüngliche cover-Entität bleibt erhalten."
         : "Removing a shutter deletes its Smart Shutter settings. The original cover entity remains available."}</p>`;
-      const selected = new Set(this._managedCoverSelection || this._managedCovers.selected || []);
+      const selected = new Set(this._managedCoverSelection);
       for (const cover of this._managedCovers.covers || []) {
-        html += `<label class="control-row">
-          <input type="checkbox" data-managed-cover="${this._escapeHtml(cover.entity_id)}" ${selected.has(cover.entity_id) ? "checked" : ""} ${this._savingManagedCovers ? "disabled" : ""} />
-          <span>${this._escapeHtml(cover.name || cover.entity_id)}</span>
-        </label>`;
+        const suffix = ` (${cover.entity_id})`;
+        const sourceName = cover.name || cover.entity_id;
+        const label = sourceName.endsWith(suffix) ? sourceName.slice(0, -suffix.length) : sourceName;
+        const id = this._escapeHtml(cover.entity_id).replace(/"/g, "&quot;");
+        const value = this._escapeHtml(this._managedCoverNames[cover.entity_id] || "").replace(/"/g, "&quot;");
+        html += `<div class="managed-cover-row" data-managed-cover-row>
+          <label class="control-row">
+            <input type="checkbox" data-managed-cover="${id}" ${selected.has(cover.entity_id) ? "checked" : ""} />
+            <span>${this._escapeHtml(label)}</span>
+          </label>
+          <div class="form-field">
+            <label for="managed-name-${id}">Name</label>
+            <input id="managed-name-${id}" type="text" data-managed-cover-name="${id}" value="${value}"
+              placeholder="${this._escapeHtml(label).replace(/"/g, "&quot;")}" ${selected.has(cover.entity_id) ? "" : "disabled"} />
+            <div class="meta">${id}</div>
+          </div>
+        </div>`;
       }
       if (!(this._managedCovers.covers || []).length) html += `<p>${de ? "Keine passenden Rollläden gefunden." : "No supported shutters found."}</p>`;
-      html += `<button class="save-btn" data-save-covers ${this._savingManagedCovers ? "disabled" : ""}>${this._savingManagedCovers ? (de ? "Wird gespeichert…" : "Saving…") : (de ? "Speichern" : "Save")}</button>`;
-      html += `<span class="save-status" data-managed-covers-status>${this._escapeHtml(this._managedCoversStatus || "")}</span>`;
+      html += `<span class="save-status" data-managed-covers-status role="status" aria-live="polite">${this._escapeHtml(this._managedCoversStatus || "")}</span>`;
+      html += `<button data-retry-covers ${this._managedCoversSaveError ? "" : "hidden"}>${de ? "Erneut versuchen" : "Retry"}</button>`;
       return html;
+    }
+
+    _updateManagedCoverStatus() {
+      const status = this.shadowRoot.querySelector("[data-managed-covers-status]");
+      if (status) status.textContent = this._managedCoversStatus || "";
+      const retry = this.shadowRoot.querySelector("[data-retry-covers]");
+      if (retry) retry.hidden = !this._managedCoversSaveError;
+    }
+
+    _queueManagedCoverSave(delay) {
+      clearTimeout(this._managedCoversSaveTimer);
+      this._managedCoversSavePending = true;
+      this._managedCoversSaveError = false;
+      this._managedCoversStatus = this._language() === "de" ? "Änderungen werden gespeichert…" : "Changes will be saved…";
+      this._updateManagedCoverStatus();
+      this._managedCoversSaveTimer = setTimeout(() => {
+        this._managedCoversSaveTimer = null;
+        this._saveManagedCovers();
+      }, delay);
     }
 
     async _saveManagedCovers() {
       if (!this._isAdmin() || this._savingManagedCovers || !this._managedCovers) return;
-      const body = this.shadowRoot.querySelector(".body");
-      const selected = Array.from(body.querySelectorAll("[data-managed-cover]:checked"), (el) => el.getAttribute("data-managed-cover"));
+      clearTimeout(this._managedCoversSaveTimer);
+      this._managedCoversSaveTimer = null;
+      const selected = [...this._managedCoverSelection];
+      const names = Object.fromEntries(Object.entries(this._managedCoverNameChanges).filter(([id]) => selected.includes(id)));
       const removed = this._managedCovers.selected.filter((id) => !selected.includes(id));
       const de = this._language() === "de";
-      if (removed.length && !window.confirm(de
-        ? `${removed.length} Rollladen/Rollläden aus Smart Shutter entfernen? Ihre Smart-Shutter-Einstellungen werden gelöscht. Die ursprünglichen cover-Entitäten bleiben erhalten.`
-        : `Remove ${removed.length} shutter(s) from Smart Shutter? Their Smart Shutter settings will be deleted. The original cover entities remain available.`)) return;
-      // Preserve the user's selection through errors and the reload wait.
-      this._managedCoverSelection = selected;
-      this._managedCoversStatus = "";
+      this._managedCoversSavePending = false;
+      this._managedCoversSaveError = false;
+      this._managedCoversStatus = de ? "Wird gespeichert…" : "Saving…";
       this._savingManagedCovers = true;
-      this._render();
+      this._updateManagedCoverStatus();
       try {
-        await this._hass.callWS({ type: "smart_shutter/save_covers", entry_id: this._managedCovers.entry_id, covers: selected });
+        await this._hass.callWS({ type: "smart_shutter/save_covers", entry_id: this._managedCovers.entry_id, covers: selected, names });
         this._managedCovers.selected = selected;
+        for (const [id, name] of Object.entries(names)) {
+          if (this._managedCoverNameChanges[id] === name) delete this._managedCoverNameChanges[id];
+        }
         let refreshed = false;
         for (let attempt = 0; attempt < 30; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 200));
-          await this._loadRegistries();
+          // Refresh data without replacing name inputs, focus, or newer drafts.
+          await this._loadRegistries(false);
           const backendIds = ((this._backendConfig && this._backendConfig.covers) || []).map((cover) => cover.entity_id);
           const modelIds = this._model ? this._model.shutters.map((shutter) => shutter.coverEntityId) : [];
           if (selected.every((id) => backendIds.includes(id) && modelIds.includes(id)) &&
@@ -4966,51 +5039,18 @@
           }
         }
         this._managedCoversStatus = refreshed
-          ? (de ? "Gespeichert. Rollladenliste aktualisiert." : "Saved. Shutter list updated.")
-          : (de ? "Gespeichert. Die Integration lädt noch neu; öffne die Ansicht in Kürze erneut." : "Saved. The integration is still reloading; reopen this view shortly.");
+          ? (de ? "Automatisch gespeichert." : "Saved automatically.")
+          : (de ? "Gespeichert. Die Integration lädt noch neu." : "Saved. The integration is still reloading.");
         this._haptic("success");
       } catch (err) {
         this._managedCoversStatus = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        this._managedCoversSaveError = true;
         this._haptic("failure");
       } finally {
         this._savingManagedCovers = false;
-        if (this._view === "settings-shutters") this._render();
-      }
-    }
-
-    _renderSettingsRename() {
-      const covers = (this._backendConfig && this._backendConfig.covers) || [];
-      let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
-      html += `<h2>Rename shutters</h2>`;
-      html += `<div class="form-grid">`;
-      covers.forEach((c) => {
-        html += `
-          <div class="form-field">
-            <label>${c.entity_id}</label>
-            <input type="text" data-rename-field="${c.entity_id}" value="${c.name}" />
-          </div>
-        `;
-      });
-      html += `</div>`;
-      html += `<button class="save-btn" data-save-rename>Save</button>`;
-      html += `<span class="save-status" data-save-status></span>`;
-      return html;
-    }
-
-    async _saveRename() {
-      const body = this.shadowRoot.querySelector(".body");
-      const statusEl = body.querySelector("[data-save-status]");
-      const names = {};
-      body.querySelectorAll("[data-rename-field]").forEach((el) => {
-        names[el.getAttribute("data-rename-field")] = el.value;
-      });
-      try {
-        await this._hass.callWS({ type: "smart_shutter/rename_shutters", names });
-        this._haptic("success");
-        if (statusEl) statusEl.textContent = this._message("savedReload");
-      } catch (err) {
-        this._haptic("failure");
-        if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        if (this._managedCoversSavePending && !this._managedCoversSaveTimer) this._queueManagedCoverSave(0);
+        else this._updateManagedCoverStatus();
+        if (this.isConnected && ["overview", "list", "detail", "settings"].includes(this._view)) this._render();
       }
     }
 

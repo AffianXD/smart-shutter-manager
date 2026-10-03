@@ -876,6 +876,7 @@ async def handle_get_available_covers(hass, connection, msg):
         "entry_id": entry.entry_id,
         "covers": [{"entity_id": entity_id, "name": label} for entity_id, label in available_covers(hass, entry).items()],
         "selected": list(entry.data.get(CONF_COVERS, [])),
+        "names": dict(entry.data.get(CONF_NAMES, {})),
     })
 
 
@@ -883,6 +884,7 @@ async def handle_get_available_covers(hass, connection, msg):
     vol.Required("type"): "smart_shutter/save_covers",
     vol.Optional("entry_id"): str,
     vol.Required("covers"): [str],
+    vol.Optional("names"): {str: str},
 })
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -893,7 +895,7 @@ async def handle_save_covers(hass, connection, msg):
         connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
         return
     try:
-        async_update_covers(hass, entry, msg["covers"])
+        async_update_covers(hass, entry, msg["covers"], names=msg.get("names"))
     except ValueError:
         connection.send_error(msg["id"], "invalid_selection", "Select supported cover entities.")
         return
