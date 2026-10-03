@@ -14,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -22,6 +23,8 @@ import urllib.request
 VIRTUAL = [f"cover.codex_ui_test_{key}" for key in ("alpha", "beta", "gamma")]
 LABEL = "io.smart-shutter."
 AGENT_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}\Z")
+DEV_USERNAME = "developer"
+DOTENV_KEYS = {"HA_VERSION", "TZ", "TEST_PORT", "HA_WAIT_TIMEOUT", "HA_DEV_PASSWORD"}
 
 
 class LocalError(Exception):
@@ -76,19 +79,86 @@ def write_json(path, value):
     temporary.replace(path)
 
 
+def dotenv_values(path):
+    """Read the small, literal .env format used by this local tool (no expansion)."""
+    safe_path(path)
+    if not path.exists():
+        return {}
+    result = {}
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep:
+            raise LocalError("Each .env entry must use KEY=VALUE syntax")
+        if key not in DOTENV_KEYS:
+            raise LocalError("Unsupported .env setting")
+        if key in result:
+            raise LocalError("Duplicate .env setting")
+        value = value.strip()
+        if value.startswith('"'):
+            try:
+                value = json.loads(value)
+            except ValueError as exc:
+                raise LocalError("Invalid quoted .env value") from exc
+            if not isinstance(value, str):
+                raise LocalError("Invalid quoted .env value")
+        elif value.startswith("'"):
+            if len(value) < 2 or not value.endswith("'"):
+                raise LocalError("Invalid quoted .env value")
+            value = value[1:-1]
+        result[key] = value
+    return result
+
+
+def write_env_values(path, updates, runtime_dir):
+    """Atomically update selected values without shell evaluation or secret temp files."""
+    safe_path(path)
+    content = path.read_text() if path.exists() else ""
+    lines = content.splitlines()
+    replaced = set()
+    output = []
+    for line in lines:
+        key, sep, _ = line.partition("=")
+        normalized = key.strip()
+        if sep and normalized in updates:
+            output.append(f"{key}=\"{json.dumps(updates[normalized])[1:-1]}\"")
+            replaced.add(normalized)
+        else:
+            output.append(line)
+    for key, value in updates.items():
+        if key not in replaced:
+            output.append(f"{key}={json.dumps(value)}")
+    if not output:
+        output = ["# Local Home Assistant defaults and shared Dev login; this file is gitignored."]
+        output.extend(f"{key}={json.dumps(value)}" for key, value in updates.items())
+    text = "\n".join(output) + "\n"
+    runtime_dir = safe_path(runtime_dir)
+    runtime_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(runtime_dir, 0o700)
+    safe_path(path.parent)
+    fd, temporary_name = tempfile.mkstemp(prefix="dotenv-", suffix=".tmp", dir=runtime_dir)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w") as file:
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.chmod(temporary, 0o600)
+        temporary.replace(path)
+        os.chmod(path, 0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
 def settings(root):
     result = {"HA_VERSION": "2026.9.4", "TZ": "Europe/Berlin",
               "TEST_PORT": "8123", "HA_WAIT_TIMEOUT": "300"}
     path = root / ".env"
-    if path.exists():
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            key, sep, value = line.partition("=")
-            if not sep or key not in result:
-                raise LocalError(f"Unsupported .env setting: {key}")
-            result[key] = value.strip().strip("\"'")
+    result.update({key: value for key, value in dotenv_values(path).items() if key in result})
     for key in result:
         if key in os.environ:
             result[key] = os.environ[key]
@@ -119,7 +189,8 @@ class Environment:
         self.state_file = self.path / "state.json"
         self.compose_file = self.path / "compose.json"
         self.config = self.path / "config"
-        self.defaults = settings(self.root)
+        # Linked worktrees share one source of local defaults and one Dev login.
+        self.defaults = settings(self.primary)
         self.state = None
         safe_path(self.path)
 
@@ -147,6 +218,16 @@ class Environment:
         lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         path = safe_path(lock_dir / f"{self.project}.lock")
         with path.open("a") as file:
+            if self.mode == "test":
+                # The stable Test runtime is shared by every linked worktree;
+                # queue mutations so agents can take turns instead of failing.
+                try:
+                    fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    print("Another operation is using the shared Test environment; waiting for its turn.")
+                    fcntl.flock(file, fcntl.LOCK_EX)
+                yield
+                return
             try:
                 fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
@@ -173,10 +254,10 @@ class Environment:
                 if kind == "network" and labels.get(LABEL + "repository") != self.repo_id:
                     raise LocalError(f"Foreign Docker network in project {self.project}")
 
-    def compose(self, *args, capture=False):
+    def compose(self, *args, capture=False, input_data=None):
         safe_path(self.compose_file)
         return run(["docker", "compose", "-p", self.project, "-f", str(self.compose_file), *args],
-                   cwd=self.root, capture_output=capture)
+                   cwd=self.root, capture_output=capture, input=input_data)
 
     def render(self):
         env = os.environ.copy()
@@ -357,13 +438,112 @@ class Environment:
         path = self.path / "credentials.json"
         if path.exists():
             return read_json(path)
-        creds = {"username": "developer", "password": secrets.token_urlsafe(24),
+        creds = {"username": DEV_USERNAME,
+                 "password": self.shared_dev_credentials()["password"] if self.mode == "dev" else secrets.token_urlsafe(24),
                  "client_id": "http://localhost/"}
         write_json(path, creds)
         return creds
 
     def save_credentials(self, creds):
         write_json(self.path / "credentials.json", creds)
+
+    @contextmanager
+    def shared_login_lock(self):
+        lock_dir = safe_path(self.primary / ".runtime" / "locks")
+        lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(lock_dir, 0o700)
+        path = safe_path(lock_dir / "dev-login.lock")
+        with path.open("a") as file:
+            os.chmod(path, 0o600)
+            fcntl.flock(file, fcntl.LOCK_EX)
+            yield
+
+    def shared_dev_credentials(self):
+        if self.mode != "dev":
+            raise LocalError("Shared credentials are available only for Dev instances")
+        env_file = safe_path(self.primary / ".env")
+        with self.shared_login_lock():
+            values = dotenv_values(env_file)
+            password = values.get("HA_DEV_PASSWORD", "")
+            if not password:
+                password = secrets.token_urlsafe(32)
+                write_env_values(env_file, {"HA_DEV_PASSWORD": password}, self.primary / ".runtime")
+            elif env_file.exists():
+                os.chmod(env_file, 0o600)
+            if len(password.encode("utf-8")) > 72:
+                raise LocalError("HA_DEV_PASSWORD must be at most 72 UTF-8 bytes")
+            return {"username": DEV_USERNAME, "password": password, "client_id": "http://localhost/"}
+
+    def running(self):
+        result = self.compose("ps", "--format", "json", capture=True).stdout.strip()
+        if not result:
+            return False
+        objects = json.loads(result) if result.startswith("[") else [json.loads(line) for line in result.splitlines()]
+        return any(obj.get("State") == "running" for obj in objects)
+
+    def sync_dev_login(self):
+        """Align this owned Dev's local HA account with the shared ignored .env."""
+        if self.mode != "dev":
+            return
+        shared = self.shared_dev_credentials()
+        credentials_path = safe_path(self.path / "credentials.json")
+        auth_store = safe_path(self.config / ".storage" / "auth")
+        if not credentials_path.exists():
+            if auth_store.exists():
+                raise LocalError("Dev auth state exists without managed credentials; refusing to replace it")
+            self.save_credentials(shared)
+            return
+
+        creds = read_json(credentials_path)
+        if creds.get("username") != DEV_USERNAME:
+            raise LocalError("This Dev instance uses an unexpected local username; credentials were retained")
+        if creds.get("password") == shared["password"]:
+            return
+        if not auth_store.exists():
+            # Onboarding has not created a Home Assistant account yet.
+            creds.update(shared)
+            self.save_credentials(creds)
+            return
+        old_password = creds.get("password")
+        if (
+            not isinstance(old_password, str)
+            or not old_password
+            or not isinstance(creds.get("refresh_token"), str)
+            or not creds["refresh_token"]
+        ):
+            raise LocalError("Dev auth state cannot be matched to its saved login; credentials were retained")
+
+        was_running = self.running()
+        if was_running:
+            self.compose("stop")
+        code = (
+            "import contextlib, io, json, sys\n"
+            "from homeassistant.scripts.auth import run\n"
+            "p=json.load(sys.stdin)\n"
+            "def validate(password):\n"
+            "    out=io.StringIO()\n"
+            "    with contextlib.redirect_stdout(out):\n"
+            "        run(['--script','auth','--config','/config','validate',p['username'],password])\n"
+            "    return out.getvalue().strip() == 'Auth valid'\n"
+            "if not validate(p['old_password']):\n"
+            "    if not validate(p['password']):\n"
+            "        raise SystemExit(3)\n"
+            "else:\n"
+            "    run(['--script','auth','--config','/config','change_password',p['username'],p['password']])\n"
+        )
+        payload = json.dumps({"username": DEV_USERNAME, "old_password": old_password,
+                              "password": shared["password"]})
+        try:
+            self.compose("run", "--rm", "--no-deps", "-T", "--entrypoint", "python",
+                         "homeassistant", "-c", code, capture=True, input_data=payload)
+            creds.update(shared)
+            self.save_credentials(creds)
+        except BaseException as exc:
+            if was_running:
+                self.compose("up", "-d")
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            raise LocalError("Could not safely align this Dev login; runtime data and saved credentials were retained") from exc
 
     def token(self):
         creds = self.credentials()
@@ -538,7 +718,9 @@ class Environment:
                     self.config.mkdir(exist_ok=True)
                     self.sync_files()
                     self.render()
-                elif self.mode == "dev" and (self.state.get("source_hash") != self.source_hash()
+                if self.mode == "dev":
+                    self.sync_dev_login()
+                if self.mode == "dev" and (self.state.get("source_hash") != self.source_hash()
                         or self.state.get("defaults") != self.defaults):
                     self.sync_transaction()
                 self.compose("up", "-d")
@@ -549,6 +731,8 @@ class Environment:
                 print(f"Stopped {self.project}; data retained at {self.path}")
             elif action in ("restart", "sync"):
                 self.assert_no_review()
+                if self.mode == "dev":
+                    self.sync_dev_login()
                 if action == "sync" or self.mode == "dev":
                     self.sync_transaction()
                 else:
@@ -560,6 +744,8 @@ class Environment:
                 self.clean(yes)
                 if action == "reset":
                     self.initialize()
+                    if self.mode == "dev":
+                        self.sync_dev_login()
                     self.compose("up", "-d")
                     self.wait(bootstrap=True)
                     self.show()
