@@ -2,7 +2,7 @@
   "name": "smart-shutter-manager-tests",
   "private": true,
   "scripts": {
-    "test:card": "node tests/run_test.js && node tests/run_dashboard_test.js && node tests/run_management_test.js",
+    "test:card": "node tests/run_test.js && node tests/run_dashboard_test.js && node tests/run_management_test.js && node tests/run_notifications_test.js",
     "check:card": "node --check custom_components/smart_shutter/www/smart-shutter-card.js"
   },
   "devDependencies": {

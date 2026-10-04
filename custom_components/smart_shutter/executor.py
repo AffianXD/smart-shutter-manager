@@ -172,7 +172,7 @@ class NotificationBatcher:
     ) -> None:
         """Immediate, individual warning with buttons (+X Min / Skip) - deliberately NOT bundled, as each response refers to
 exactly this one shutter."""
-        notify_service = self._coordinator.notify_service
+        notify_service = self._coordinator.effective_notify_service(shutter.entity_id)
         if not notify_service or "." not in notify_service:
             return
 

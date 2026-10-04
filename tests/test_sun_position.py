@@ -142,6 +142,9 @@ class FakeCoordinator:
     def area_effective_temps(self, area):
         return None, None
 
+    def effective_notify_service(self, entity_id, area=None):
+        return (area or {}).get("notify_service") or self.notify_service
+
 
 hass = FakeHass()
 hass.states.data["sun.sun"] = FakeState({"azimuth": 200, "elevation": 10})

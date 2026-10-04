@@ -7,7 +7,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import (
     ACTION_CLOSE, ACTION_OPEN, CONF_COVERS, CONF_NAMES, CONF_EXTERNAL_TRIGGERS,
-    CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES, DATA_COORDINATOR,
+    CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES, CONF_SHUTTER_NOTIFICATIONS, DATA_COORDINATOR,
     DATA_SCHEDULER_MANAGER, DOMAIN, REQUIRED_COVER_FEATURES,
 )
 
@@ -33,7 +33,7 @@ def available_covers(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, str]:
 
 
 @callback
-def async_update_covers(hass: HomeAssistant, entry: ConfigEntry, selected: list[str], *, options: dict | None = None) -> None:
+def async_update_covers(hass: HomeAssistant, entry: ConfigEntry, selected: list[str], *, options: dict | None = None, names: dict[str, str] | None = None) -> None:
     """Validate new covers and preserve configuration for retained covers.
 
     Entry updates use HA's existing update listener to unload old entities and
@@ -48,8 +48,18 @@ def async_update_covers(hass: HomeAssistant, entry: ConfigEntry, selected: list[
     data = {**entry.data, CONF_COVERS: covers, CONF_NAMES: {
         entity_id: name for entity_id, name in entry.data.get(CONF_NAMES, {}).items() if entity_id in kept
     }}
+    # Names are a patch: untouched shutters keep their existing names.
+    if names is not None:
+        for entity_id, name in names.items():
+            if entity_id not in kept:
+                continue
+            name = name.strip()
+            if name:
+                data[CONF_NAMES][entity_id] = name
+            else:
+                data[CONF_NAMES].pop(entity_id, None)
     new_options = dict(entry.options if options is None else options)
-    for key in (CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES):
+    for key in (CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES, CONF_SHUTTER_NOTIFICATIONS):
         if key in new_options:
             new_options[key] = {entity_id: value for entity_id, value in new_options[key].items() if entity_id in kept}
     if CONF_EXTERNAL_TRIGGERS in new_options:
@@ -68,6 +78,14 @@ def async_update_covers(hass: HomeAssistant, entry: ConfigEntry, selected: list[
         if guard is not None:
             guard.clear_pause(entity_id)
     hass.config_entries.async_update_entry(entry, data=data, options=new_options)
+    if names is not None:
+        devices = dr.async_get(hass)
+        for entity_id in names.keys() & kept:
+            device = devices.async_get_device(identifiers={(DOMAIN, f"{DOMAIN}_{entity_id}")})
+            # HA user names take precedence over the integration's device name.
+            # Keep an existing override in sync when explicitly renaming here.
+            if device is not None and entry.entry_id in device.config_entries and device.name_by_user is not None:
+                devices.async_update_device(device.id, name_by_user=data[CONF_NAMES].get(entity_id))
 
 
 @callback

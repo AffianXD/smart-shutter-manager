@@ -523,6 +523,11 @@
     disconnectedCallback() {
       this._stopDeviceRegistrySubscription();
       this._deviceRegistryConnection = null;
+      if (this._managedCoversSaveTimer) {
+        clearTimeout(this._managedCoversSaveTimer);
+        this._managedCoversSaveTimer = null;
+        this._saveManagedCovers();
+      }
     }
 
     _stopDeviceRegistrySubscription() {
@@ -558,7 +563,10 @@
         const byId = new Map(devices.map((device) => [device.id, device]));
         for (const shutter of this._model.allShutters || this._model.shutters) {
           const device = byId.get(shutter.deviceId);
-          if (device) shutter.name = device.name_by_user || device.name || shutter.coverEntityId;
+          if (device) {
+            shutter.name = device.name_by_user || device.name || shutter.coverEntityId;
+            shutter.userName = device.name_by_user;
+          }
         }
         this._updateValues();
       } catch (err) {
@@ -566,7 +574,7 @@
       }
     }
 
-    async _loadRegistries() {
+    async _loadRegistries(render = true) {
       const hass = this._hass;
       try {
         const [entities, devices, areas] = await Promise.all([
@@ -600,7 +608,7 @@
         this._loadError =
           "Registry-Daten konnten nicht geladen werden: " + (err && err.message ? err.message : String(err));
       }
-      this._render();
+      if (render) this._render();
     }
 
     _isAdmin() {
@@ -758,6 +766,7 @@
           deviceId: device.id,
           coverEntityId,
           name: device.name_by_user || device.name || coverEntityId,
+          userName: device.name_by_user,
           areaName: area ? area.name : null,
           floorName: floor ? floor.name : "Ohne Geschoss",
           floorLevel: floor && typeof floor.level === "number" ? floor.level : 9999,
@@ -1453,6 +1462,26 @@
           font-size: 0.85em; color: var(--ssm-muted); background: var(--ssm-card-bg);
           border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); padding: 10px 12px; margin: 12px 0;
         }
+        .notification-info { display: inline-block; vertical-align: middle; margin-left: 4px; }
+        .notification-info summary {
+          display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+          border: 1px solid var(--ssm-border); border-radius: 50%; color: var(--ssm-muted); cursor: pointer;
+          font-size: 0.88em; font-weight: 700; line-height: 1; list-style: none;
+        }
+        .notification-info summary::-webkit-details-marker { display: none; }
+        .notification-info summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+        .notification-info-text {
+          position: absolute; z-index: 5; top: 32px; left: 0; width: min(280px, 100%); box-sizing: border-box;
+          padding: 10px 12px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm);
+          background: var(--ssm-card-bg); box-shadow: var(--ssm-shadow); color: var(--primary-text-color);
+          font-size: 0.82em; font-weight: 400; line-height: 1.4;
+        }
+        .notification-title { position: relative; display: flex; align-items: center; gap: 2px; }
+        .notification-title h3 { margin-right: 0; }
+        .notification-title .notification-info { margin-left: auto; flex-shrink: 0; }
+        .notification-title .notification-info-text { left: auto; right: 0; }
+        .notification-hint { position: relative; display: block; width: 100%; }
+        .notification-status { display: block; min-height: 1.2em; margin: 4px 0 10px; font-size: 0.8em; color: var(--ssm-muted); }
         .error { color: var(--error-color, #c62828); }
         .settings-menu { display: flex; flex-direction: column; gap: 8px; }
         .settings-menu-item {
@@ -1489,6 +1518,10 @@
           border: 1px solid var(--ssm-border); background: var(--ssm-card-bg); color: inherit; font-family: inherit;
         }
         .entity-picker-slot ha-entity-picker { width: 100%; display: block; }
+        .managed-cover-row { margin-bottom: 20px; min-width: 0; overflow-wrap: anywhere; }
+        .managed-cover-row .control-row { margin-bottom: 6px; flex-wrap: nowrap; align-items: flex-start; }
+        .managed-cover-row .control-row span { flex: 1; min-width: 0; }
+        .managed-cover-row input[type="checkbox"] { flex-shrink: 0; margin-top: 3px; }
         .form-field textarea { min-height: 60px; resize: vertical; }
         .form-field .meta, .meta { font-size: 0.8em; color: var(--ssm-muted); margin-top: 4px; }
         .save-btn {
@@ -1802,7 +1835,11 @@
       const areaSaveBtn = ev.target.closest("[data-area-save]");
       if (areaSaveBtn) {
         this._haptic("selection");
-        this._collectAndSaveArea();
+        this._collectAndSaveArea().catch((err) => {
+          const status = this.shadowRoot.querySelector("[data-save-status]");
+          if (status) status.textContent = this._message("errorPrefix") + (err.message || String(err));
+          this._haptic("failure");
+        });
         return;
       }
       const scheduleEditBtn = ev.target.closest("[data-schedule-edit]");
@@ -1874,13 +1911,8 @@
         this._saveTrigger();
         return;
       }
-      if (ev.target.closest("[data-save-covers]")) {
+      if (ev.target.closest("[data-retry-covers]")) {
         this._saveManagedCovers();
-        return;
-      }
-      const saveRenameBtn = ev.target.closest("[data-save-rename]");
-      if (saveRenameBtn) {
-        this._saveRename();
         return;
       }
       // Keep these actions ahead of the containing row click handler.
@@ -2071,6 +2103,51 @@
     }
 
     _onChange(ev) {
+      const notificationMode = ev.target.closest("[data-notification-mode]");
+      if (notificationMode) {
+        const form = notificationMode.closest("[data-notification-settings]");
+        form.querySelector("[data-notification-recipient-field]").style.display = notificationMode.value === "custom" ? "" : "none";
+        form.querySelector("[data-notification-recipient]").required = notificationMode.value === "custom";
+        const status = form.querySelector("[data-notification-status]");
+        if (status) status.textContent = "";
+        const recipient = form.querySelector("[data-notification-recipient]");
+        if (form.getAttribute("data-notification-autosave") === "true" &&
+            (notificationMode.value !== "custom" || recipient.value.trim())) {
+          this._queueNotificationSave(form, 0);
+        } else {
+          this._cancelNotificationSave(form);
+        }
+        return;
+      }
+      const notificationRecipient = ev.target.closest("[data-notification-recipient]");
+      if (notificationRecipient) {
+        const form = notificationRecipient.closest("[data-notification-settings]");
+        if (form.getAttribute("data-notification-autosave") === "true" &&
+            form.querySelector("[data-notification-mode]").value === "custom") {
+          if (notificationRecipient.value.trim()) this._queueNotificationSave(form, 0);
+          else this._cancelNotificationSave(form);
+        }
+        return;
+      }
+      const managedCover = ev.target.closest("[data-managed-cover]");
+      if (managedCover) {
+        const id = managedCover.getAttribute("data-managed-cover");
+        const de = this._language() === "de";
+        if (!managedCover.checked && !window.confirm(de
+          ? "Rollladen aus Smart Shutter entfernen? Seine Smart-Shutter-Einstellungen werden gelöscht. Die ursprüngliche cover-Entität bleibt erhalten."
+          : "Remove this shutter from Smart Shutter? Its Smart Shutter settings will be deleted. The original cover entity remains available.")) {
+          managedCover.checked = true;
+          return;
+        }
+        this._managedCoverSelection = managedCover.checked
+          ? [...new Set([...this._managedCoverSelection, id])]
+          : this._managedCoverSelection.filter((selected) => selected !== id);
+        if (managedCover.checked) this._managedCoverNameChanges[id] = this._managedCoverNames[id] || "";
+        const nameInput = managedCover.closest("[data-managed-cover-row]").querySelector("[data-managed-cover-name]");
+        nameInput.disabled = !managedCover.checked;
+        this._queueManagedCoverSave(0);
+        return;
+      }
       const triggerTargetModeSel = ev.target.closest("select[data-trigger-target-mode]");
       if (triggerTargetModeSel) {
         this._haptic("selection");
@@ -2134,6 +2211,24 @@
     }
 
     _onInput(ev) {
+      const notificationRecipient = ev.target.closest("[data-notification-recipient]");
+      if (notificationRecipient) {
+        const form = notificationRecipient.closest("[data-notification-settings]");
+        if (form.getAttribute("data-notification-autosave") === "true" &&
+            form.querySelector("[data-notification-mode]").value === "custom") {
+          if (notificationRecipient.value.trim()) this._queueNotificationSave(form, 650);
+          else this._cancelNotificationSave(form);
+        }
+        return;
+      }
+      const managedName = ev.target.closest("[data-managed-cover-name]");
+      if (managedName) {
+        const id = managedName.getAttribute("data-managed-cover-name");
+        this._managedCoverNames[id] = managedName.value;
+        this._managedCoverNameChanges[id] = managedName.value;
+        this._queueManagedCoverSave(700);
+        return;
+      }
       const slider = ev.target.closest("[data-slider-group]");
       if (slider) {
         // Immediate live coupling between slider and number field, WITHOUT
@@ -2276,8 +2371,6 @@
         body.innerHTML = this._renderTriggerEdit();
       } else if (this._view === "settings-shutters") {
         body.innerHTML = this._renderSettingsShutters();
-      } else if (this._view === "settings-rename") {
-        body.innerHTML = this._renderSettingsRename();
       } else if (this._view === "settings-areas") {
         body.innerHTML = this._renderSettingsAreas();
       } else if (this._view === "settings-area-edit") {
@@ -3320,6 +3413,9 @@
         </div>
       `;
 
+      const notifications = (this._backendConfig && this._backendConfig.shutter_notifications) || {};
+      html += this._renderNotificationSettings(notifications[s.coverEntityId] || {}, s.coverEntityId);
+
       if (mode === "global") {
         // Only read-only summary - no detail sliders,
         // those that would have no effect anyway (see scheduler.py: at
@@ -3456,7 +3552,7 @@
           ${this._isAdmin() ? `<button class="settings-menu-item" data-settings-nav="settings-shutters">
             <ha-icon icon="mdi:window-shutter-cog"></ha-icon>
             <div><div class="name">${this._language() === "de" ? "Rollläden verwalten" : "Manage shutters"}</div>
-            <div class="meta">${this._language() === "de" ? "Weitere Rollläden hinzufügen oder entfernen" : "Add or remove managed shutters"}</div></div>
+            <div class="meta">${this._language() === "de" ? "Rollläden hinzufügen, entfernen oder umbenennen" : "Add, remove, or rename shutters"}</div></div>
           </button>` : ""}
           <button class="settings-menu-item" data-settings-nav="settings-basic">
             <ha-icon icon="mdi:cog"></ha-icon>
@@ -3473,10 +3569,6 @@
           <button class="settings-menu-item" data-settings-nav="settings-areas">
             <ha-icon icon="mdi:compass-outline"></ha-icon>
             <div><div class="name">Areas</div><div class="meta">e.g. Front/Back/North/South - own groups with presets</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-rename">
-            <ha-icon icon="mdi:rename-box"></ha-icon>
-            <div><div class="name">Rename shutters</div><div class="meta"></div></div>
           </button>
           <button class="settings-menu-item" data-settings-nav="settings-global">
             <ha-icon icon="mdi:earth"></ha-icon>
@@ -3671,6 +3763,183 @@
       } catch (err) {
         this._haptic("failure");
         if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+      }
+    }
+
+    _notificationMode(settings) {
+      return settings.notification_mode || ((settings.notify_service || "").trim() ? "custom" : "inherit");
+    }
+
+    _renderNotificationSettings(settings, coverEntityId = null, areaId = null) {
+      const de = this._language() === "de";
+      const area = !coverEntityId;
+      const autosave = !area || !!areaId;
+      const saveKey = coverEntityId ? `shutter:${coverEntityId}` : areaId ? `area:${areaId}` : null;
+      const state = saveKey && this._notificationSaveStates && this._notificationSaveStates.get(saveKey);
+      const displaySettings = state && state.draft && state.revision > state.savedRevision
+        ? { ...settings, notification_mode: state.draft.mode, notify_service: state.draft.notifyService }
+        : settings;
+      const mode = this._notificationMode(displaySettings);
+      const hintLabel = de ? "Hinweis anzeigen" : "Show information";
+      const precedenceHint = area
+        ? (de ? "Vererben übernimmt die globale Einstellung. Einstellungen einzelner Rollläden haben Vorrang." : "Inherit uses the global setting. Individual shutter settings take priority.")
+        : (de ? "Vererben übernimmt die Bereichseinstellung, sonst die globale Einstellung. Bei mehreren Bereichen gilt für Zeitplanmeldungen der erste ausdrücklich konfigurierte Bereich; Sonnenstandsmeldungen nutzen den auslösenden Bereich." : "Inherit uses the area setting, otherwise the global setting. For schedule notifications, the first explicitly configured area wins; sun notifications use the triggering area.");
+     const appliesHint = de
+       ? "Gilt für Bewegungen, Frostschutz, Schließvorwarnungen und aktivierte Sonnenstandsmeldungen."
+       : "Applies to movements, frost protection, pre-close warnings, and enabled sun notifications.";
+      const notificationTitle = area ? "" : `<h3>${de ? "Benachrichtigungen" : "Notifications"}</h3>`;
+     return `<div class="notification-settings" data-notification-settings data-notification-autosave="${autosave ? "true" : "false"}" ${coverEntityId ? `data-notification-entity="${this._escapeHtml(coverEntityId)}"` : ""} ${areaId ? `data-notification-area-id="${this._escapeHtml(areaId)}"` : ""}>
+        <div class="notification-title">${notificationTitle}<details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${appliesHint}</span></details></div>
+        <div class="form-field">
+          <label>${de ? "Benachrichtigungen empfangen" : "Receive notifications"}
+            <select data-notification-mode ${area ? 'data-area-field="notification_mode"' : ""}>
+              <option value="inherit" ${mode === "inherit" ? "selected" : ""}>${de ? "Vererben" : "Inherit"}</option>
+              <option value="off" ${mode === "off" ? "selected" : ""}>${de ? "Aus" : "Off"}</option>
+              <option value="custom" ${mode === "custom" ? "selected" : ""}>${de ? "Eigener Empfänger" : "Custom recipient"}</option>
+            </select>
+          </label>
+        </div>
+        <div class="notification-hint"><details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${precedenceHint}</span></details></div>
+        <div class="form-field" data-notification-recipient-field style="${mode === "custom" ? "" : "display:none"}">
+          <label>${de ? "Benachrichtigungsdienst" : "Notification service"}
+            <input type="text" data-notification-recipient ${area ? 'data-area-field="notify_service"' : ""} value="${this._escapeHtml(displaySettings.notify_service || "").replace(/"/g, "&quot;")}" placeholder="notify.mobile_app_phone" ${mode === "custom" ? "required" : ""} />
+          </label>
+        </div>
+        <span class="notification-status" data-notification-status role="status" aria-live="polite">${this._escapeHtml(state && state.statusText || "")}</span>
+      </div>`;
+    }
+
+    _notificationSaveKey(form) {
+      const entityId = form.getAttribute("data-notification-entity");
+      const areaId = form.getAttribute("data-notification-area-id");
+      return entityId ? `shutter:${entityId}` : areaId ? `area:${areaId}` : null;
+    }
+
+    _notificationSaveState(key) {
+      if (!key) return null;
+      if (!this._notificationSaveStates) this._notificationSaveStates = new Map();
+      let state = this._notificationSaveStates.get(key);
+      if (!state) {
+        state = { key, timer: null, saving: false, queued: false, revision: 0, savedRevision: 0, draft: null, statusText: "" };
+        this._notificationSaveStates.set(key, state);
+      }
+      return state;
+    }
+
+    _notificationSaveForm(key) {
+      if (!this.shadowRoot) return null;
+      return [...this.shadowRoot.querySelectorAll("[data-notification-settings]")]
+        .find((form) => this._notificationSaveKey(form) === key) || null;
+    }
+
+    _setNotificationSaveStatus(state, message) {
+      state.statusText = message;
+      const form = this._notificationSaveForm(state.key);
+      const status = form && form.querySelector("[data-notification-status]");
+      if (status) status.textContent = message;
+    }
+
+    _notificationDraft(form) {
+      return {
+        mode: form.querySelector("[data-notification-mode]").value,
+        notifyService: form.querySelector("[data-notification-recipient]").value.trim(),
+      };
+    }
+
+    _notificationDraftIsSavable(draft) {
+      return !!draft && (draft.mode !== "custom" || !!draft.notifyService);
+    }
+
+    _scheduleNotificationSave(state, delay) {
+      if (state.timer) clearTimeout(state.timer);
+      if (state.saving) {
+        state.queued = true;
+        return;
+      }
+      state.timer = setTimeout(() => {
+        state.timer = null;
+        this._saveNotificationSettings(state);
+      }, delay);
+    }
+
+    _queueNotificationSave(form, delay) {
+      const key = this._notificationSaveKey(form);
+      const state = this._notificationSaveState(key);
+      if (!state) return;
+      state.revision += 1;
+      state.draft = this._notificationDraft(form);
+      state.entityId = form.getAttribute("data-notification-entity");
+      state.areaId = form.getAttribute("data-notification-area-id");
+      state.entryId = this._backendConfig && this._backendConfig.entry_id;
+      this._setNotificationSaveStatus(state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
+      if (!this._notificationDraftIsSavable(state.draft)) {
+        this._scheduleNotificationSave(state, delay);
+        return;
+      }
+      this._scheduleNotificationSave(state, delay);
+    }
+
+    _cancelNotificationSave(form) {
+      const key = this._notificationSaveKey(form);
+      const state = this._notificationSaveStates && this._notificationSaveStates.get(key);
+      if (!state) return;
+      state.revision += 1;
+      state.draft = this._notificationDraft(form);
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+      }
+      if (state.saving) state.queued = true;
+      this._setNotificationSaveStatus(state, "");
+    }
+
+    async _saveNotificationSettings(state) {
+      if (state.saving) {
+        state.queued = true;
+        return;
+      }
+      if (!this._notificationDraftIsSavable(state.draft)) return;
+      const revision = state.revision;
+      const { mode, notifyService } = state.draft;
+      state.saving = true;
+      state.queued = false;
+      this._setNotificationSaveStatus(state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
+      try {
+        if (state.entityId) {
+          await this._hass.callWS({
+            type: "smart_shutter/save_shutter_notifications",
+            entry_id: state.entryId,
+            entity_id: state.entityId,
+            notification_mode: mode,
+            notify_service: mode === "custom" ? notifyService : "",
+          });
+        } else if (state.areaId) {
+          await this._hass.callWS({
+            type: "smart_shutter/save_own_area_settings",
+            entry_id: state.entryId,
+            area_id: state.areaId,
+            fields: { notification_mode: mode, notify_service: mode === "custom" ? notifyService : "" },
+          });
+        } else {
+          return;
+        }
+        await this._loadBackendConfig();
+        state.savedRevision = Math.max(state.savedRevision, revision);
+        if (revision === state.revision) {
+          this._haptic("success");
+          this._setNotificationSaveStatus(state, this._language() === "de" ? "Automatisch gespeichert." : "Saved automatically.");
+        }
+      } catch (err) {
+        if (revision === state.revision) {
+          this._haptic("failure");
+          this._setNotificationSaveStatus(state, this._message("errorPrefix") + (err && err.message ? err.message : String(err)));
+        }
+      } finally {
+        state.saving = false;
+        if (state.queued || revision !== state.revision) {
+          state.queued = false;
+          if (this._notificationDraftIsSavable(state.draft)) this._scheduleNotificationSave(state, 0);
+        }
       }
     }
 
@@ -3993,7 +4262,9 @@
         html += textAreaField(
           "sun_prenotify_text",
           "Warning text (optional, Jinja template)",
-          "Variables: {{ area }}, {{ count }}, {{ position }}, {{ minutes }}. Empty = default text.",
+          this._language() === "de"
+            ? "Variablen: {{ area }}, {{ count }}, {{ names }}, {{ position }}, {{ minutes }}. Leer = Standardtext."
+            : "Variables: {{ area }}, {{ count }}, {{ names }}, {{ position }}, {{ minutes }}. Empty = default text.",
           "{{ area }}: shutters will move to {{ position }}% in about {{ minutes }} minutes."
         );
       }
@@ -4002,21 +4273,11 @@
       const notifySection = this._sectionToggle(
         "notify",
         "Benachrichtigungen (optional)",
-        !!(existing && (existing.notify_service || "").trim())
+        !!(existing && this._notificationMode(existing) !== "inherit")
       );
       html += notifySection.headerHtml;
       if (notifySection.isOpen) {
-      html += `
-        <div class="hint">
-          Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used.
-        </div>
-      `;
-      html += `
-        <div class="form-field">
-          <label>Notification service for this area</label>
-          <input type="text" data-area-field="notify_service" value="${existing && existing.notify_service ? existing.notify_service : ""}" placeholder="z.B. notify.mobile_app_guest_phone" />
-        </div>
-      `;
+      html += this._renderNotificationSettings(existing || {}, null, existing && existing.id);
       }
 
       const frostSection = sectionToggle(
@@ -4357,17 +4618,23 @@
       await this._submitSchedules(newList, false, statusEl);
     }
 
-    async _saveAreas(areas) {
+    async _saveAreas(areas, navigate = true) {
       try {
         const result = await this._hass.callWS({ type: "smart_shutter/save_custom_areas", areas });
         if (result.success) {
           await this._loadBackendConfig();
-          this._editingAreaId = null;
-          this._view = "settings-areas";
+          if (navigate) {
+            this._editingAreaId = null;
+            this._view = "settings-areas";
+          }
         }
-        this._render();
+        if (navigate) this._render();
+        return !!result.success;
       } catch (err) {
-        this._render();
+        const status = this.shadowRoot.querySelector("[data-save-status]");
+        if (status) status.textContent = this._message("errorPrefix") + (err.message || String(err));
+        this._haptic("failure");
+        return false;
       }
     }
 
@@ -4443,8 +4710,12 @@
         sun_prenotify_text: readText("sun_prenotify_text"),
         inside_temp_sensor: readEntityPicker("inside_temp_sensor"),
         frost_threshold_c: readFloat("frost_threshold_c"),
+        notification_mode: readSelect("notification_mode") || this._notificationMode(existing || {}),
         notify_service: readText("notify_service"),
       };
+      if (operationalFields.notification_mode !== "custom") operationalFields.notify_service = "";
+      const recipient = body.querySelector("[data-notification-recipient]");
+      if (operationalFields.notification_mode === "custom" && recipient && !recipient.reportValidity()) return;
       if (
         operationalFields.sun_position_enabled &&
         (operationalFields.sun_azimuth_from === null ||
@@ -4510,12 +4781,19 @@
         const coverEntityId = cb.getAttribute("data-area-member");
         const current = shutterAreas[coverEntityId] || [];
         const withoutThisArea = current.filter((id) => id !== areaId);
-        shutterAreas[coverEntityId] = cb.checked ? [...withoutThisArea, areaId] : withoutThisArea;
+        shutterAreas[coverEntityId] = cb.checked
+          ? (current.includes(areaId) ? current : [...current, areaId])
+          : withoutThisArea;
         if (!shutterAreas[coverEntityId].length) delete shutterAreas[coverEntityId];
       });
 
+      // Validate the area before changing membership; keep the draft on errors.
+      if (!await this._saveAreas(areas, false)) return;
+      this._editingAreaId = areaId;
       await this._saveShutterAreas(shutterAreas);
-      await this._saveAreas(areas);
+      this._editingAreaId = null;
+      this._view = "settings-areas";
+      this._render();
     }
 
     async _applyAreaToMembers(areaId) {
@@ -4894,18 +5172,27 @@
     }
 
     async _loadManagedCovers() {
-      if (!this._isAdmin()) return;
+      if (!this._isAdmin() || this._savingManagedCovers || this._managedCoversSavePending || this._managedCoversSaveError || this._loadingManagedCovers) return;
+      this._loadingManagedCovers = true;
       this._managedCovers = null;
       this._managedCoversError = null;
       this._managedCoversStatus = "";
-      this._managedCoverSelection = null;
+      this._managedCoverNameChanges = {};
       try {
         this._managedCovers = await this._hass.callWS({
           type: "smart_shutter/get_available_covers",
           entry_id: this._backendConfig && this._backendConfig.entry_id,
         });
+        this._managedCoverSelection = [...this._managedCovers.selected];
+        this._managedCoverNames = { ...this._managedCovers.names };
+        // Show HA user-defined names too; only edited names are sent back.
+        for (const shutter of (this._model && this._model.shutters) || []) {
+          if (shutter.userName) this._managedCoverNames[shutter.coverEntityId] = shutter.userName;
+        }
       } catch (err) {
         this._managedCoversError = err && err.message ? err.message : String(err);
+      } finally {
+        this._loadingManagedCovers = false;
       }
       if (this._view === "settings-shutters") this._render();
     }
@@ -4918,45 +5205,80 @@
       if (this._managedCoversError) return html + `<div class="hint error">${this._escapeHtml(this._managedCoversError)}</div>`;
       if (!this._managedCovers) return html + `<p>${de ? "Rollläden werden geladen…" : "Loading shutters…"}</p>`;
       html += `<p class="meta">${de
-        ? "Ausgewählte Rollläden werden vom Smart Shutter Manager verwaltet. Wähle weitere aus oder entferne die Auswahl. Speichern lädt die Integration neu."
-        : "Selected shutters are managed by Smart Shutter Manager. Select additional shutters or deselect existing ones. Saving reloads the integration."}</p>`;
+        ? "Rollläden auswählen und Namen bearbeiten. Änderungen werden automatisch gespeichert. Ein leeres Namensfeld verwendet den Standardnamen."
+        : "Select shutters and edit their names. Changes are saved automatically. An empty name field uses the default name."}</p>`;
       html += `<p class="hint">${de
         ? "Beim Entfernen werden die Smart-Shutter-Einstellungen dieses Rollladens gelöscht. Die ursprüngliche cover-Entität bleibt erhalten."
         : "Removing a shutter deletes its Smart Shutter settings. The original cover entity remains available."}</p>`;
-      const selected = new Set(this._managedCoverSelection || this._managedCovers.selected || []);
+      const selected = new Set(this._managedCoverSelection);
       for (const cover of this._managedCovers.covers || []) {
-        html += `<label class="control-row">
-          <input type="checkbox" data-managed-cover="${this._escapeHtml(cover.entity_id)}" ${selected.has(cover.entity_id) ? "checked" : ""} ${this._savingManagedCovers ? "disabled" : ""} />
-          <span>${this._escapeHtml(cover.name || cover.entity_id)}</span>
-        </label>`;
+        const suffix = ` (${cover.entity_id})`;
+        const sourceName = cover.name || cover.entity_id;
+        const label = sourceName.endsWith(suffix) ? sourceName.slice(0, -suffix.length) : sourceName;
+        const id = this._escapeHtml(cover.entity_id).replace(/"/g, "&quot;");
+        const value = this._escapeHtml(this._managedCoverNames[cover.entity_id] || "").replace(/"/g, "&quot;");
+        html += `<div class="managed-cover-row" data-managed-cover-row>
+          <label class="control-row">
+            <input type="checkbox" data-managed-cover="${id}" ${selected.has(cover.entity_id) ? "checked" : ""} />
+            <span>${this._escapeHtml(label)}</span>
+          </label>
+          <div class="form-field">
+            <label for="managed-name-${id}">Name</label>
+            <input id="managed-name-${id}" type="text" data-managed-cover-name="${id}" value="${value}"
+              placeholder="${this._escapeHtml(label).replace(/"/g, "&quot;")}" ${selected.has(cover.entity_id) ? "" : "disabled"} />
+            <div class="meta">${id}</div>
+          </div>
+        </div>`;
       }
       if (!(this._managedCovers.covers || []).length) html += `<p>${de ? "Keine passenden Rollläden gefunden." : "No supported shutters found."}</p>`;
-      html += `<button class="save-btn" data-save-covers ${this._savingManagedCovers ? "disabled" : ""}>${this._savingManagedCovers ? (de ? "Wird gespeichert…" : "Saving…") : (de ? "Speichern" : "Save")}</button>`;
-      html += `<span class="save-status" data-managed-covers-status>${this._escapeHtml(this._managedCoversStatus || "")}</span>`;
+      html += `<span class="save-status" data-managed-covers-status role="status" aria-live="polite">${this._escapeHtml(this._managedCoversStatus || "")}</span>`;
+      html += `<button data-retry-covers ${this._managedCoversSaveError ? "" : "hidden"}>${de ? "Erneut versuchen" : "Retry"}</button>`;
       return html;
+    }
+
+    _updateManagedCoverStatus() {
+      const status = this.shadowRoot.querySelector("[data-managed-covers-status]");
+      if (status) status.textContent = this._managedCoversStatus || "";
+      const retry = this.shadowRoot.querySelector("[data-retry-covers]");
+      if (retry) retry.hidden = !this._managedCoversSaveError;
+    }
+
+    _queueManagedCoverSave(delay) {
+      clearTimeout(this._managedCoversSaveTimer);
+      this._managedCoversSavePending = true;
+      this._managedCoversSaveError = false;
+      this._managedCoversStatus = this._language() === "de" ? "Änderungen werden gespeichert…" : "Changes will be saved…";
+      this._updateManagedCoverStatus();
+      this._managedCoversSaveTimer = setTimeout(() => {
+        this._managedCoversSaveTimer = null;
+        this._saveManagedCovers();
+      }, delay);
     }
 
     async _saveManagedCovers() {
       if (!this._isAdmin() || this._savingManagedCovers || !this._managedCovers) return;
-      const body = this.shadowRoot.querySelector(".body");
-      const selected = Array.from(body.querySelectorAll("[data-managed-cover]:checked"), (el) => el.getAttribute("data-managed-cover"));
+      clearTimeout(this._managedCoversSaveTimer);
+      this._managedCoversSaveTimer = null;
+      const selected = [...this._managedCoverSelection];
+      const names = Object.fromEntries(Object.entries(this._managedCoverNameChanges).filter(([id]) => selected.includes(id)));
       const removed = this._managedCovers.selected.filter((id) => !selected.includes(id));
       const de = this._language() === "de";
-      if (removed.length && !window.confirm(de
-        ? `${removed.length} Rollladen/Rollläden aus Smart Shutter entfernen? Ihre Smart-Shutter-Einstellungen werden gelöscht. Die ursprünglichen cover-Entitäten bleiben erhalten.`
-        : `Remove ${removed.length} shutter(s) from Smart Shutter? Their Smart Shutter settings will be deleted. The original cover entities remain available.`)) return;
-      // Preserve the user's selection through errors and the reload wait.
-      this._managedCoverSelection = selected;
-      this._managedCoversStatus = "";
+      this._managedCoversSavePending = false;
+      this._managedCoversSaveError = false;
+      this._managedCoversStatus = de ? "Wird gespeichert…" : "Saving…";
       this._savingManagedCovers = true;
-      this._render();
+      this._updateManagedCoverStatus();
       try {
-        await this._hass.callWS({ type: "smart_shutter/save_covers", entry_id: this._managedCovers.entry_id, covers: selected });
+        await this._hass.callWS({ type: "smart_shutter/save_covers", entry_id: this._managedCovers.entry_id, covers: selected, names });
         this._managedCovers.selected = selected;
+        for (const [id, name] of Object.entries(names)) {
+          if (this._managedCoverNameChanges[id] === name) delete this._managedCoverNameChanges[id];
+        }
         let refreshed = false;
         for (let attempt = 0; attempt < 30; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 200));
-          await this._loadRegistries();
+          // Refresh data without replacing name inputs, focus, or newer drafts.
+          await this._loadRegistries(false);
           const backendIds = ((this._backendConfig && this._backendConfig.covers) || []).map((cover) => cover.entity_id);
           const modelIds = this._model ? this._model.shutters.map((shutter) => shutter.coverEntityId) : [];
           if (selected.every((id) => backendIds.includes(id) && modelIds.includes(id)) &&
@@ -4966,51 +5288,18 @@
           }
         }
         this._managedCoversStatus = refreshed
-          ? (de ? "Gespeichert. Rollladenliste aktualisiert." : "Saved. Shutter list updated.")
-          : (de ? "Gespeichert. Die Integration lädt noch neu; öffne die Ansicht in Kürze erneut." : "Saved. The integration is still reloading; reopen this view shortly.");
+          ? (de ? "Automatisch gespeichert." : "Saved automatically.")
+          : (de ? "Gespeichert. Die Integration lädt noch neu." : "Saved. The integration is still reloading.");
         this._haptic("success");
       } catch (err) {
         this._managedCoversStatus = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        this._managedCoversSaveError = true;
         this._haptic("failure");
       } finally {
         this._savingManagedCovers = false;
-        if (this._view === "settings-shutters") this._render();
-      }
-    }
-
-    _renderSettingsRename() {
-      const covers = (this._backendConfig && this._backendConfig.covers) || [];
-      let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
-      html += `<h2>Rename shutters</h2>`;
-      html += `<div class="form-grid">`;
-      covers.forEach((c) => {
-        html += `
-          <div class="form-field">
-            <label>${c.entity_id}</label>
-            <input type="text" data-rename-field="${c.entity_id}" value="${c.name}" />
-          </div>
-        `;
-      });
-      html += `</div>`;
-      html += `<button class="save-btn" data-save-rename>Save</button>`;
-      html += `<span class="save-status" data-save-status></span>`;
-      return html;
-    }
-
-    async _saveRename() {
-      const body = this.shadowRoot.querySelector(".body");
-      const statusEl = body.querySelector("[data-save-status]");
-      const names = {};
-      body.querySelectorAll("[data-rename-field]").forEach((el) => {
-        names[el.getAttribute("data-rename-field")] = el.value;
-      });
-      try {
-        await this._hass.callWS({ type: "smart_shutter/rename_shutters", names });
-        this._haptic("success");
-        if (statusEl) statusEl.textContent = this._message("savedReload");
-      } catch (err) {
-        this._haptic("failure");
-        if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        if (this._managedCoversSavePending && !this._managedCoversSaveTimer) this._queueManagedCoverSave(0);
+        else this._updateManagedCoverStatus();
+        if (this.isConnected && ["overview", "list", "detail", "settings"].includes(this._view)) this._render();
       }
     }
 

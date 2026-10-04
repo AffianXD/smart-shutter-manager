@@ -39,6 +39,57 @@ async def test_available_covers_include_existing_missing_but_not_unsupported(has
     result = conn.send_result.call_args.args[1]
     assert {c["entity_id"] for c in result["covers"]} == {"cover.kitchen", "cover.office", "cover.missing"}
     assert result["selected"] == ["cover.kitchen", "cover.missing"]
+    assert result["names"] == {"cover.kitchen": "Küche", "cover.missing": "Missing"}
+
+
+async def test_selection_and_name_patch_save_together(hass):
+    entry = entry_with_covers(hass)
+    conn = connection()
+    await invoke(hass, ws.handle_save_covers, conn, {
+        "type": "smart_shutter/save_covers", "entry_id": entry.entry_id,
+        "covers": ["cover.kitchen", "cover.office"],
+        "names": {"cover.office": '  Büro <Süd> & "Fenster"  ', "cover.missing": "Removed"},
+    })
+    assert entry.data["names"] == {"cover.kitchen": "Küche", "cover.office": 'Büro <Süd> & "Fenster"'}
+    assert entry.options["shutter_notes"] == {"cover.kitchen": "keep"}
+    assert entry.options["notify_service"] == "notify.owner"
+
+
+async def test_rename_updates_existing_ha_user_name_and_blank_restores_default(hass):
+    entry = entry_with_covers(hass)
+    devices = dr.async_get(hass)
+    device = devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, "smart_shutter_cover.kitchen")}, name="Kitchen")
+    devices.async_update_device(device.id, name_by_user="Old HA name")
+    conn = connection()
+    await invoke(hass, ws.handle_save_covers, conn, {
+        "type": "smart_shutter/save_covers", "covers": entry.data["covers"],
+        "names": {"cover.kitchen": "  New name  "},
+    })
+    assert entry.data["names"]["cover.kitchen"] == "New name"
+    assert devices.async_get(device.id).name_by_user == "New name"
+    await invoke(hass, ws.handle_save_covers, conn, {
+        "type": "smart_shutter/save_covers", "covers": entry.data["covers"],
+        "names": {"cover.kitchen": "   "},
+    })
+    assert "cover.kitchen" not in entry.data["names"]
+    assert entry.data["names"]["cover.missing"] == "Missing"
+    assert devices.async_get(device.id).name_by_user is None
+
+
+async def test_invalid_selection_does_not_rename_device_or_entry(hass):
+    entry = entry_with_covers(hass)
+    devices = dr.async_get(hass)
+    device = devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, "smart_shutter_cover.kitchen")}, name="Kitchen")
+    devices.async_update_device(device.id, name_by_user="Keep")
+    before = (dict(entry.data), dict(entry.options))
+    conn = connection()
+    await invoke(hass, ws.handle_save_covers, conn, {
+        "type": "smart_shutter/save_covers", "covers": ["cover.kitchen", "cover.unsupported"],
+        "names": {"cover.kitchen": "Changed"},
+    })
+    assert conn.send_error.call_args.args[1] == "invalid_selection"
+    assert (entry.data, entry.options) == before
+    assert devices.async_get(device.id).name_by_user == "Keep"
 
 
 async def test_save_preserves_kept_settings_and_prunes_removed_cover_data(hass):
@@ -108,7 +159,8 @@ async def test_add_remove_reload_keeps_source_cover_and_remaining_entity_ids(has
     original = registry.async_get_entity_id("sensor", DOMAIN, "smart_shutter_cover.kitchen_next_action")
     assert original
     conn = connection()
-    await invoke(hass, ws.handle_save_covers, conn, {"type": "smart_shutter/save_covers", "covers": ["cover.kitchen", "cover.office"]})
+    await invoke(hass, ws.handle_save_covers, conn, {"type": "smart_shutter/save_covers", "covers": ["cover.kitchen", "cover.office"], "names": {"cover.office": "Office south"}})
+    assert entry.data["names"] == {"cover.office": "Office south"}
     assert registry.async_get_entity_id("sensor", DOMAIN, "smart_shutter_cover.office_next_action")
     assert registry.async_get_entity_id("sensor", DOMAIN, "smart_shutter_cover.kitchen_next_action") == original
     await invoke(hass, ws.handle_save_covers, conn, {"type": "smart_shutter/save_covers", "covers": ["cover.kitchen"]})

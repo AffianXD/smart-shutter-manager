@@ -36,6 +36,7 @@ from .const import (
     DEFAULT_STAGGER_DELAY_MS,
     CONF_NAMES,
     CONF_NOTIFY_SERVICE,
+    CONF_SHUTTER_NOTIFICATIONS,
     CONF_NOTIFY_TEXT_FROST,
     CONF_NOTIFY_TEXT_MOVED,
     CONF_NOTIFY_TEXT_PRECLOSE,
@@ -55,6 +56,7 @@ from .const import (
 from .helpers import clean_base_name, get_area_name, get_ha_area_id, find_temperature_sensor_in_area
 from .storage import ActionOverrideStore
 from .localization import notification_template
+from .notification_settings import notification_mode
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -291,14 +293,24 @@ class SmartShutterCoordinator:
                 pass
         return self.frost_threshold_c
 
-    def effective_notify_service(self, cover_entity_id: str) -> str | None:
-        """Effective notify service for a shutter (v0.20) - the first area (in assignment order) with its own notify_service-Override wins, otherwise the global notify_service. This allows e.g. Airbnb guests to be notified exclusively through movements of their own shutters, without the host being notified additionally (or instead) - see executor._BatchNotifier, which bundles notifications per effective notify service separately.
+    @property
+    def shutter_notifications(self) -> dict[str, dict[str, Any]]:
+        """Persisted notification overrides for individual source covers."""
+        return self.entry.options.get(CONF_SHUTTER_NOTIFICATIONS, {})
 
-A shutter without area override AND without global notify_service returns None (no notification)."""
-        for area in self.get_shutter_areas(cover_entity_id):
-            override = (area.get("notify_service") or "").strip()
-            if override:
-                return override
+    def effective_notify_service(self, cover_entity_id: str, area: dict[str, Any] | None = None) -> str | None:
+        """Resolve shutter -> first explicit area -> global, including explicit off.
+
+        Sun rules pass their triggering area instead of all assigned areas.
+        """
+        settings = [self.shutter_notifications.get(cover_entity_id, {})]
+        settings.extend([area] if area is not None else self.get_shutter_areas(cover_entity_id))
+        for setting in settings:
+            mode = notification_mode(setting)
+            if mode == "off":
+                return None
+            if mode == "custom":
+                return (setting.get("notify_service") or "").strip() or None
         return self.notify_service
 
     def _read_temp(self, entity_id: str | None) -> float | None:

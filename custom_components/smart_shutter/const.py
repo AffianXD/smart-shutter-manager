@@ -18,6 +18,7 @@ CONF_OUTSIDE_TEMP_SENSOR = "outside_temp_sensor"  # global outdoor temperature s
 CONF_INSIDE_TEMP_SENSOR = "inside_temp_sensor"    # global indoor temperature sensor (fallback, sensor.*)
 CONF_FROST_THRESHOLD_C = "frost_threshold_c"      # Threshold in °C, frost protection active at <= threshold
 CONF_NOTIFY_SERVICE = "notify_service"  # e.g. "notify.notify" or "notify.mobile_app_..."
+CONF_SHUTTER_NOTIFICATIONS = "shutter_notifications"  # cover.entity_id -> mode and recipient
 CONF_PRE_NOTIFY_LEAD = "pre_notify_lead_minutes"  # Warning X minutes in advance
 CONF_POSTPONE_OPTIONS = "postpone_options_minutes"  # e.g. "5,10,15"
 CONF_CATCH_UP_WINDOW = "catch_up_window_minutes"  # Catch-up window after restart
