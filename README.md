@@ -108,6 +108,35 @@ notification templates are preserved; `action` and `trigger` are display text,
 while `action_raw` and `trigger_raw` provide the original values for template
 comparisons (`trigger_raw` is available for movement notifications).
 
+### Summer and winter profiles
+
+Enable **Switch automatically with daylight saving time** under the card's
+**Settings → Basic Settings**, or in the integration's **Configure → Basic
+Settings** dialog. This optional feature starts disabled. First activation copies
+your existing times, trigger types, offsets, and global/individual choices into
+both profiles.
+
+In **Global Entities** and each shutter's settings, select **Summer time** or
+**Winter time** to edit that profile. The active profile is shown separately;
+editing the other profile does not activate it. Each season retains weekday,
+weekend, and holiday times, plus opening/closing trigger types and sun offsets.
+Individual time sources and trigger sources can differ between seasons.
+Positions remain shared. Area presets apply to the currently active season.
+
+The automatic choice uses the configured Home Assistant timezone: daylight
+saving time selects summer, standard time selects winter. Timezones without
+daylight saving time always use winter. No season sensor is required. Custom
+profiles retain their priority and remain season-independent; manual pauses
+and postponed/skipped actions still apply.
+
+Future actions and previews use the season at their execution time, including
+across a clock change. A missing local time during the spring change moves to
+the first valid local minute. A repeated autumn time uses its first occurrence,
+with at most one regular action of each kind per local day. Disabling the
+feature restores the original settings; seasonal entities stay registered to
+retain edits for later reactivation. Existing entity IDs are preserved, and
+seasonal settings have additional native time/select/number entities.
+
 ## Upgrading from v0.20.x
 
 Read the [v0.21.0 migration guide](MIGRATION.md) before upgrading.

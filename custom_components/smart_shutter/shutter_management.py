@@ -11,6 +11,8 @@ from .const import (
     DATA_SCHEDULER_MANAGER, DOMAIN, REQUIRED_COVER_FEATURES,
 )
 
+from .seasons import CONF_SEASONAL_INITIAL_VALUES
+
 
 @callback
 def discover_eligible_covers(hass: HomeAssistant) -> dict[str, str]:
@@ -62,6 +64,11 @@ def async_update_covers(hass: HomeAssistant, entry: ConfigEntry, selected: list[
     for key in (CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES):
         if key in new_options:
             new_options[key] = {entity_id: value for entity_id, value in new_options[key].items() if entity_id in kept}
+    if CONF_SEASONAL_INITIAL_VALUES in new_options:
+        new_options[CONF_SEASONAL_INITIAL_VALUES] = {
+            owner: values for owner, values in new_options[CONF_SEASONAL_INITIAL_VALUES].items()
+            if owner == "global" or owner in kept
+        }
     if CONF_EXTERNAL_TRIGGERS in new_options:
         new_options[CONF_EXTERNAL_TRIGGERS] = [
             trigger for trigger in new_options[CONF_EXTERNAL_TRIGGERS]

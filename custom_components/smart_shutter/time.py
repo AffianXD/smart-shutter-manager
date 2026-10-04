@@ -36,6 +36,7 @@ from .const import (
     SIGNAL_RECOMPUTE,
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
+from .seasons import SEASONS, for_season, has_seasonal_profiles, seed_seasonal_entity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,6 +81,16 @@ async def async_setup_entry(
                     LocalProfileTime(coordinator, shutter, action, profile)
                 )
 
+    if has_seasonal_profiles(coordinator):
+        for season in SEASONS:
+            for action in ACTIONS:
+                for profile in PROFILES:
+                    entities.append(for_season(GlobalProfileTime(coordinator, global_device_id, action, profile), season))
+            for shutter in coordinator.shutters.values():
+                for action in ACTIONS:
+                    for profile in PROFILES:
+                        entities.append(for_season(LocalProfileTime(coordinator, shutter, action, profile), season))
+
     async_add_entities(entities)
 
 
@@ -115,6 +126,7 @@ class _ProfileTimeBase(TimeEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        seed_seasonal_entity(self)
         last_state = await self.async_get_last_state()
         if last_state is not None and last_state.state not in (
             None,

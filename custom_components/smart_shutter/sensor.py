@@ -28,6 +28,7 @@ from .const import (
     SIGNAL_RECOMPUTE,
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
+from .seasons import seasonal_enabled, season_at
 from .localization import display_text, is_german
 from .scheduler import ShutterSchedule, compute_global_schedule, compute_schedule
 
@@ -223,6 +224,8 @@ def _apply_next_action(sensor: _BaseScheduleSensor, schedule: ShutterSchedule) -
 
     debug_attrs = {
         "profile": schedule.active_profile,
+        "seasonal_enabled": seasonal_enabled(sensor._coordinator),
+        "active_season": season_at(dt_util.now()),
         "next_open": schedule.next_open.isoformat() if schedule.next_open else None,
         "next_close": schedule.next_close.isoformat()
         if schedule.next_close

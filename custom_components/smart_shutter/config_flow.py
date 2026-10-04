@@ -61,6 +61,7 @@ from .const import (
     WEEKDAY_KEYS,
 )
 from .coordinator import SmartShutterCoordinator
+from .seasons import CONF_SEASONAL_ENABLED, prepare_seasonal_options
 from .helpers import clean_base_name, get_area_name
 from .scheduler import custom_schedule_matches, find_overlapping_rules
 from .localization import notification_template
@@ -296,6 +297,10 @@ class SmartShutterOptionsFlow(config_entries.OptionsFlow):
             if self._pending_triggers is not None:
                 data[CONF_EXTERNAL_TRIGGERS] = self._pending_triggers
 
+            data[CONF_SEASONAL_ENABLED] = user_input.get(CONF_SEASONAL_ENABLED, data.get(CONF_SEASONAL_ENABLED, False))
+            coordinator = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {}).get(DATA_COORDINATOR)
+            prepare_seasonal_options(coordinator, data)
+
             if user_input.get(CONF_HOLIDAY_ENTITY):
                 data[CONF_HOLIDAY_ENTITY] = user_input[CONF_HOLIDAY_ENTITY]
             else:
@@ -379,6 +384,7 @@ class SmartShutterOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Optional(CONF_SEASONAL_ENABLED, default=options.get(CONF_SEASONAL_ENABLED, False)): selector.BooleanSelector(),
                 vol.Optional(
                     CONF_HOLIDAY_ENTITY,
                     description={"suggested_value": current_holiday},

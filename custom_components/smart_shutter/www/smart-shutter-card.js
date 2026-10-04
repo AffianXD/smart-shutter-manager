@@ -468,6 +468,7 @@
       this._view = "overview"; // overview | list | detail | settings
       this._detailDeviceId = null;
       this._detailTab = "basic";
+      this._editingSeason = null;
       this._search = "";
       // Optimistic state overlay for Select changes: independent
       // from the volatile hass-object (which is completely reloaded with EVERY update
@@ -501,6 +502,7 @@
     set hass(hass) {
       this._hass = hass;
       this._subscribeDeviceRegistry();
+      this._subscribeSeasonRegistry();
       if (!this._loaded) {
         this._loaded = true;
         this._loadRegistries(); // ruft am Ende einmalig _render() auf
@@ -518,11 +520,15 @@
 
     connectedCallback() {
       this._subscribeDeviceRegistry();
+      this._subscribeSeasonRegistry();
     }
 
     disconnectedCallback() {
       this._stopDeviceRegistrySubscription();
       this._deviceRegistryConnection = null;
+      this._stopSeasonRegistrySubscription();
+      this._seasonRegistryConnection = null;
+      clearTimeout(this._seasonRegistryTimer);
       if (this._managedCoversSaveTimer) {
         clearTimeout(this._managedCoversSaveTimer);
         this._managedCoversSaveTimer = null;
@@ -553,6 +559,43 @@
         else unsubscribe();
       } catch (err) {
         if (this._deviceRegistryConnection === connection) this._deviceRegistryConnection = null;
+      }
+    }
+
+    _stopSeasonRegistrySubscription() {
+      const unsubscribe = this._unsubscribeSeasonRegistry;
+      this._unsubscribeSeasonRegistry = null;
+      if (unsubscribe) unsubscribe();
+    }
+
+    async _refreshSeasonRegistry() {
+      try {
+        const entities = await this._hass.callWS({ type: "config/entity_registry/list" });
+        if (!this.isConnected) return;
+        const ids = entities.filter((e) => e.platform === "smart_shutter" && /_(summer|winter)$/.test(e.unique_id || ""))
+          .map((e) => e.entity_id).sort().join(",");
+        if (ids !== this._seasonRegistryIds) await this._loadRegistries();
+      } catch (err) {
+        // Keep open editors intact if registry refresh is temporarily unavailable.
+      }
+    }
+
+    async _subscribeSeasonRegistry() {
+      const connection = this._hass && this._hass.connection;
+      if (!this.isConnected || !connection || !connection.subscribeEvents ||
+          connection === this._seasonRegistryConnection) return;
+      this._stopSeasonRegistrySubscription();
+      this._seasonRegistryConnection = connection;
+      try {
+        const unsubscribe = await connection.subscribeEvents((event) => {
+          if (!event.data || !["create", "remove"].includes(event.data.action)) return;
+          clearTimeout(this._seasonRegistryTimer);
+          this._seasonRegistryTimer = setTimeout(() => this._refreshSeasonRegistry(), 200);
+        }, "entity_registry_updated");
+        if (this._seasonRegistryConnection === connection) this._unsubscribeSeasonRegistry = unsubscribe;
+        else unsubscribe();
+      } catch (err) {
+        if (this._seasonRegistryConnection === connection) this._seasonRegistryConnection = null;
       }
     }
 
@@ -601,6 +644,8 @@
             haUsers = []; // Older HA versions may lack this API; hide access controls.
           }
         }
+        this._seasonRegistryIds = entities.filter((e) => e.platform === "smart_shutter" && /_(summer|winter)$/.test(e.unique_id || ""))
+          .map((e) => e.entity_id).sort().join(",");
         this._buildModel(entities, devices, areas, floors, haUsers);
         await this._loadBackendConfig();
         this._loadError = null;
@@ -791,8 +836,20 @@
       };
     }
 
-    _categorizeEntities(regEntries) {
+    _categorizeEntities(regEntries, includeSeasons = true) {
+      const seasonalEntries = {};
+      if (includeSeasons) {
+        for (const season of ["summer", "winter"]) {
+          seasonalEntries[season] = this._categorizeEntities(
+            regEntries.filter((e) => (e.unique_id || "").endsWith(`_${season}`))
+              .map((e) => ({ ...e, unique_id: e.unique_id.slice(0, -season.length - 1) })),
+            false
+          );
+        }
+        regEntries = regEntries.filter((e) => !/_(summer|winter)$/.test(e.unique_id || ""));
+      }
       const model = {
+        seasons: seasonalEntries,
         automation: {},
         sourceSelect: {},
         positionSourceSelect: {},
@@ -883,6 +940,49 @@
       if (!regEntry) return "";
       const st = this._state(regEntry.entity_id);
       return (st && st.attributes && st.attributes.friendly_name) || regEntry.entity_id;
+    }
+
+    _seasonalEnabled() {
+      return !!(this._backendConfig && this._backendConfig.seasonal_enabled);
+    }
+
+    _activeSeason() {
+      const entries = [
+        this._model && this._model.globalEntities.nextAction,
+        ...((this._model && this._model.shutters) || []).map((s) => s.entities.nextAction),
+      ];
+      for (const entry of entries) {
+        const state = entry && this._state(entry.entity_id);
+        if (state && state.attributes && state.attributes.active_season) return state.attributes.active_season;
+      }
+      return (this._backendConfig && this._backendConfig.active_season) || "winter";
+    }
+
+    _seasonEntities(entities, requestedSeason = null) {
+      if (!this._seasonalEnabled()) return entities;
+      const season = requestedSeason || this._editingSeason || this._activeSeason();
+      const selected = entities.seasons && entities.seasons[season];
+      if (!selected) return entities;
+      const result = { ...entities };
+      for (const key of ["sourceSelect", "localType", "sunOffset", "profileTimeSource", "profileTime"]) {
+        result[key] = { ...entities[key], ...selected[key] };
+      }
+      return result;
+    }
+
+    _renderSeasonPicker() {
+      if (!this._seasonalEnabled()) return "";
+      const de = this._language() === "de";
+      const labels = de ? { summer: "Sommerzeit", winter: "Winterzeit" } : { summer: "Summer time", winter: "Winter time" };
+      const active = this._activeSeason();
+      const selected = this._editingSeason || active;
+      this._editingSeason = selected;
+      return `<div class="hint" data-season-status>${de ? "Automatisch aktiv" : "Automatically active"}: ${labels[active]}</div>
+        <div class="control-row"><label>${de ? "Profil bearbeiten" : "Edit profile"}</label>
+          <select data-season-edit aria-label="${de ? "Saisonprofil bearbeiten" : "Edit seasonal profile"}">
+            ${["summer", "winter"].map((season) => `<option value="${season}"${season === selected ? " selected" : ""}>${labels[season]}</option>`).join("")}
+          </select>
+        </div>`;
     }
 
     _profileIds(shutter) {
@@ -1429,6 +1529,16 @@
         @media (hover: hover) and (pointer: fine) { .section-toggle:hover span { color: var(--primary-color); } }
         table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
         table th, table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--ssm-border); font-size: 0.9em; }
+        .profile-times { container-type: inline-size; }
+        @container (max-width: 600px) {
+          .profile-times-table, .profile-times-table tbody { display: block; }
+          .profile-times-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-bottom: 12px; }
+          .profile-times-table tr:first-child { display: none; }
+          .profile-times-table td { min-width: 0; border-bottom: 0; }
+          .profile-times-table td:first-child { grid-column: 1 / -1; font-weight: 600; border-top: 1px solid var(--ssm-border); }
+          .profile-times-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 6px; color: var(--secondary-text-color); }
+          .profile-times-table select, .profile-times-table input { width: 100%; min-width: 0; box-sizing: border-box; }
+        }
         .control-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
         .control-row label { min-width: 140px; font-size: 0.92em; }
         input[type="time"], input[type="number"], input[type="text"], select {
@@ -2079,6 +2189,12 @@
     }
 
     _onChange(ev) {
+      const seasonSelect = ev.target.closest("[data-season-edit]");
+      if (seasonSelect) {
+        this._editingSeason = seasonSelect.value;
+        this._render();
+        return;
+      }
       const managedCover = ev.target.closest("[data-managed-cover]");
       if (managedCover) {
         const id = managedCover.getAttribute("data-managed-cover");
@@ -2223,6 +2339,22 @@
     }
 
     _updateValues() {
+      const scheduleSignature = ((this._model && this._model.shutters) || []).map((shutter) => {
+        const state = shutter.entities.nextAction && this._state(shutter.entities.nextAction.entity_id);
+        const attrs = (state && state.attributes) || {};
+        return [attrs.next_open, attrs.next_close, attrs.open_automation_enabled,
+          attrs.close_automation_enabled, attrs.seasonal_enabled, attrs.active_season].join("|");
+      }).join(";");
+      if (scheduleSignature !== this._scheduleSignature) {
+        this._scheduleSignature = scheduleSignature;
+        this._invalidateForecastCache();
+      }
+      this.shadowRoot.querySelectorAll("[data-season-status]").forEach((el) => {
+        const de = this._language() === "de";
+        const active = this._activeSeason();
+        el.textContent = de ? `Automatisch aktiv: ${active === "summer" ? "Sommerzeit" : "Winterzeit"}`
+          : `Automatically active: ${active === "summer" ? "Summer time" : "Winter time"}`;
+      });
       const body = this.shadowRoot.querySelector(".body");
       if (!body) return;
       body.querySelectorAll("[data-shutter-name]").forEach((el) => {
@@ -2563,6 +2695,8 @@
     }
 
     _dayColumnHtml(dayStartMs, markersHtml) {
+      const dayEnd = new Date(dayStartMs);
+      dayEnd.setDate(dayEnd.getDate() + 1);
       const isToday = new Date(dayStartMs).toDateString() === new Date().toDateString();
       const dayLabel = new Date(dayStartMs).toLocaleDateString([], {
         weekday: "short",
@@ -2573,7 +2707,7 @@
         <div class="native-timeline-day${isToday ? " native-timeline-day-today" : ""}">
           <div class="native-timeline-day-label">${dayLabel}${isToday ? " · heute" : ""}</div>
           <div class="timeline">
-            ${this._renderTimelineTicks(dayStartMs, 24 * 60 * 60 * 1000)}
+            ${this._renderTimelineTicks(dayStartMs, dayEnd.getTime() - dayStartMs)}
             ${markersHtml}
           </div>
         </div>
@@ -2622,18 +2756,21 @@
       // horizontal scrollable column gets (see .native-timeline-scroll).
       const dayStart = new Date();
       dayStart.setHours(0, 0, 0, 0);
-      const dayStartMs = dayStart.getTime();
 
       let columnsHtml = "";
       const nowMs = Date.now();
       for (let i = 0; i < days; i++) {
-        const colStartMs = dayStartMs + i * 86400000;
-        const colEndMs = colStartMs + 86400000;
+        const colStart = new Date(dayStart);
+        colStart.setDate(dayStart.getDate() + i);
+        const colEnd = new Date(colStart);
+        colEnd.setDate(colStart.getDate() + 1);
+        const colStartMs = colStart.getTime();
+        const colEndMs = colEnd.getTime();
         const markers = this._globalTimelineGroups
           .map((g, idx) => ({ g, idx }))
           .filter(({ g }) => g.ts >= colStartMs && g.ts < colEndMs)
           .map(({ g, idx }) => {
-            const leftPct = ((g.ts - colStartMs) / 86400000) * 100;
+            const leftPct = ((g.ts - colStartMs) / (colEndMs - colStartMs)) * 100;
             const cls = g.action === "open" ? "tl-open" : "tl-close";
             const timeStr = new Date(g.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
             const actionLabel = g.action === "open" ? "Öffnen" : "Schließen";
@@ -2915,7 +3052,8 @@
       // Entity, for custom profiles directly from the rule definition
       // (they have no own global Time-Entity, see Backend).
       if (STATIC_PROFILE_LABELS[pid]) {
-        const entry = this._model.globalEntities.profileTime[pid] && this._model.globalEntities.profileTime[pid][action];
+        const times = this._seasonEntities(this._model.globalEntities).profileTime;
+        const entry = times[pid] && times[pid][action];
         const st = entry && this._state(entry.entity_id);
         return st ? st.state.slice(0, 5) : "";
       }
@@ -3049,13 +3187,16 @@
       const sorted = entries.slice().sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
       const dayStart = new Date();
       dayStart.setHours(0, 0, 0, 0);
-      const dayStartMs = dayStart.getTime();
 
       let columnsHtml = "";
       const nowMs = Date.now();
       for (let i = 0; i < days; i++) {
-        const colStartMs = dayStartMs + i * 86400000;
-        const colEndMs = colStartMs + 86400000;
+        const colStart = new Date(dayStart);
+        colStart.setDate(dayStart.getDate() + i);
+        const colEnd = new Date(colStart);
+        colEnd.setDate(colStart.getDate() + 1);
+        const colStartMs = colStart.getTime();
+        const colEndMs = colEnd.getTime();
         const markers = sorted
           .map((e, idx) => ({ e, idx }))
           .filter(({ e }) => {
@@ -3064,7 +3205,7 @@
           })
           .map(({ e, idx }) => {
             const t = new Date(e.ts);
-            const leftPct = ((t.getTime() - colStartMs) / 86400000) * 100;
+            const leftPct = ((t.getTime() - colStartMs) / (colEndMs - colStartMs)) * 100;
             const cls = e.action === "open" ? "tl-open" : "tl-close";
             const actionLabel = e.action === "open" ? "Öffnen" : "Schließen";
             const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -3220,7 +3361,7 @@
     }
 
     _renderBasicTab(s) {
-      const e = s.entities;
+      const e = this._seasonEntities(s.entities);
       let html = "";
 
       const shutterAreas = (this._backendConfig && this._backendConfig.shutter_areas) || {};
@@ -3275,9 +3416,10 @@
       html += this._renderAutomationToggle(e.automation.open, "Öffnen");
       html += this._renderAutomationToggle(e.automation.close, "Schließen");
 
+      html += this._renderSeasonPicker();
       html += `<h3>Times per Profile</h3>`;
       const profileIds = this._profileIds(s);
-      html += `<table><tr><th>Profile</th><th>Open source</th><th>Open</th><th>Close source</th><th>Close</th></tr>`;
+      html += `<div class="profile-times"><table class="profile-times-table"><tr><th>Profile</th><th>Open source</th><th>Open</th><th>Close source</th><th>Close</th></tr>`;
       for (const pid of profileIds) {
         const label = this._profileLabel(pid, s);
         const srcOpen = e.profileTimeSource[pid] && e.profileTimeSource[pid].open;
@@ -3286,13 +3428,13 @@
         const timeClose = e.profileTime[pid] && e.profileTime[pid].close;
         html += `<tr>
           <td>${label}</td>
-          <td>${srcOpen ? `<select data-select-entity="${srcOpen.entity_id}" data-time-source-select><option value="global">${this._selectOptionLabel("global")}</option><option value="local">${this._selectOptionLabel("local")}</option></select>` : "-"}</td>
-          <td>${this._renderProfileTimeCell(pid, "open", srcOpen, timeOpen)}</td>
-          <td>${srcClose ? `<select data-select-entity="${srcClose.entity_id}" data-time-source-select><option value="global">${this._selectOptionLabel("global")}</option><option value="local">${this._selectOptionLabel("local")}</option></select>` : "-"}</td>
-          <td>${this._renderProfileTimeCell(pid, "close", srcClose, timeClose)}</td>
+          <td data-label="${CARD_TEXT[this._language()]["Open source"] || "Open source"}">${srcOpen ? `<select data-select-entity="${srcOpen.entity_id}" data-time-source-select><option value="global">${this._selectOptionLabel("global")}</option><option value="local">${this._selectOptionLabel("local")}</option></select>` : "-"}</td>
+          <td data-label="${CARD_TEXT[this._language()]["Open"] || "Open"}">${this._renderProfileTimeCell(pid, "open", srcOpen, timeOpen)}</td>
+          <td data-label="${CARD_TEXT[this._language()]["Close source"] || "Close source"}">${srcClose ? `<select data-select-entity="${srcClose.entity_id}" data-time-source-select><option value="global">${this._selectOptionLabel("global")}</option><option value="local">${this._selectOptionLabel("local")}</option></select>` : "-"}</td>
+          <td data-label="${CARD_TEXT[this._language()]["Close"] || "Close"}">${this._renderProfileTimeCell(pid, "close", srcClose, timeClose)}</td>
         </tr>`;
       }
-      html += `</table>`;
+      html += `</table></div>`;
 
       return html;
     }
@@ -3303,12 +3445,12 @@
       // otherwise the global (both share the same internally
       // Model key "localType", depending on which device it is from
       // Entities originate - see _categorizeEntities).
-      const sourceEntry = s.entities.sourceSelect[action];
+      const sourceEntry = this._seasonEntities(s.entities).sourceSelect[action];
       const sourceState = sourceEntry && this._state(sourceEntry.entity_id);
       const useIndividual = sourceState && sourceState.state === SOURCE_OPTION_LOCAL;
       const typeEntry = useIndividual
-        ? s.entities.localType[action]
-        : this._model.globalEntities.localType[action];
+        ? this._seasonEntities(s.entities).localType[action]
+        : this._seasonEntities(this._model.globalEntities).localType[action];
       const st = typeEntry && this._state(typeEntry.entity_id);
       return st ? st.state : "time";
     }
@@ -3319,7 +3461,7 @@
     }
 
     _advancedModeEntries(s) {
-      const e = s.entities;
+      const e = this._seasonEntities(s.entities);
       return [e.sourceSelect.open, e.sourceSelect.close, e.positionSourceSelect.open, e.positionSourceSelect.close];
     }
 
@@ -3336,10 +3478,10 @@
     }
 
     _renderAdvancedTab(s) {
-      const e = s.entities;
+      const e = this._seasonEntities(s.entities);
 
       const mode = this._advancedMode(s);
-      let html = `
+      let html = this._renderSeasonPicker() + `
         <h3>Mode</h3>
         <div class="control-row">
           <label>Advanced Settings</label>
@@ -3358,7 +3500,7 @@
         // those that would have no effect anyway (see scheduler.py: at
         // Source=Global exclusively uses the global entities
         // evaluated).
-        const ge = this._model.globalEntities;
+        const ge = this._seasonEntities(this._model.globalEntities);
         html += `<h3>Inherited from global</h3>`;
         html += `<table>
           <tr><th></th><th>Open</th><th>Close</th></tr>
@@ -3600,6 +3742,14 @@
       html += `<h2>Basic Settings</h2>`;
       html += `<div class="form-grid">`;
 
+      const de = this._language() === "de";
+      html += `<h3>${de ? "Sommer- und Winterprofile" : "Summer and winter profiles"}</h3>
+        <label class="control-row">
+          <input type="checkbox" data-basic-field="seasonal_enabled" ${bs.seasonal_enabled ? "checked" : ""} />
+          <span>${de ? "Automatisch mit der Zeitumstellung wechseln" : "Switch automatically with daylight saving time"}</span>
+        </label>
+        <div class="meta">${de ? "Verwendet die Home-Assistant-Zeitzone. Beim ersten Aktivieren werden die bisherigen Einstellungen in beide Profile übernommen." : "Uses the Home Assistant timezone. First activation copies existing settings into both profiles."}</div>`;
+
       // v0.19.3 Unification: instead of a single, 14 fields
       // long list is now sorted into three clearly named groups -
       // easier to overview, without hiding a single field.
@@ -3686,7 +3836,7 @@
       body.querySelectorAll("[data-basic-field]").forEach((el) => {
         const key = el.getAttribute("data-basic-field");
         const isNumber = el.type === "number";
-        payload[key] = isNumber ? Number(el.value) : el.value;
+        payload[key] = el.type === "checkbox" ? el.checked : isNumber ? Number(el.value) : el.value;
       });
       body.querySelectorAll('[data-entity-picker][data-picker-attr="data-basic-field"]').forEach((slot) => {
         payload[slot.getAttribute("data-entity-picker")] = slot.getAttribute("data-value") || "";
@@ -4564,7 +4714,7 @@
       const notes = (this._backendConfig && this._backendConfig.shutter_notes) || {};
       const conflicts = [];
       for (const s of members) {
-        const e = s.entities;
+        const e = this._seasonEntities(s.entities, this._activeSeason());
         const reasons = [];
         const openSourceState = this._state(e.sourceSelect.open && e.sourceSelect.open.entity_id);
         const closeSourceState = this._state(e.sourceSelect.close && e.sourceSelect.close.entity_id);
@@ -4601,9 +4751,9 @@
 
       this._showToast(this._message("areaApplying", area.name, members.length));
       this._invalidateForecastCache();
-      const globalType = (this._model.globalEntities && this._model.globalEntities.localType) || {};
+      const globalType = this._seasonEntities(this._model.globalEntities, this._activeSeason()).localType;
       for (const s of members) {
-        const e = s.entities;
+        const e = this._seasonEntities(s.entities, this._activeSeason());
         // IMPORTANT: open_source/close_source controls trigger type AND
         // Solar offset SHARED (see scheduler._use_local_source) -
         // must therefore also be switched to "Individual" in this case,
@@ -5056,8 +5206,9 @@
 
     _renderSettingsGlobal() {
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
-      const e = this._model.globalEntities;
+      const e = this._seasonEntities(this._model.globalEntities);
       html += `<h2>Global Entities</h2>`;
+      html += this._renderSeasonPicker();
       html += `<h3>Automation (global, for all shutters)</h3>`;
       html += this._renderAutomationToggle(e.automation.open, "Öffnen");
       html += this._renderAutomationToggle(e.automation.close, "Schließen");
