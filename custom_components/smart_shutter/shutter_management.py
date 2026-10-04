@@ -7,7 +7,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import (
     ACTION_CLOSE, ACTION_OPEN, CONF_COVERS, CONF_NAMES, CONF_EXTERNAL_TRIGGERS,
-    CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES, DATA_COORDINATOR,
+    CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES, CONF_SHUTTER_NOTIFICATIONS, DATA_COORDINATOR,
     DATA_SCHEDULER_MANAGER, DOMAIN, REQUIRED_COVER_FEATURES,
 )
 
@@ -61,7 +61,7 @@ def async_update_covers(hass: HomeAssistant, entry: ConfigEntry, selected: list[
             else:
                 data[CONF_NAMES].pop(entity_id, None)
     new_options = dict(entry.options if options is None else options)
-    for key in (CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES):
+    for key in (CONF_SHUTTER_AREAS, CONF_SHUTTER_NOTES, CONF_SHUTTER_NOTIFICATIONS):
         if key in new_options:
             new_options[key] = {entity_id: value for entity_id, value in new_options[key].items() if entity_id in kept}
     if CONF_SEASONAL_INITIAL_VALUES in new_options:

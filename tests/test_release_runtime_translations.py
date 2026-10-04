@@ -94,14 +94,15 @@ async def test_sun_rule_notifications_are_german(hass, monkeypatch):
     monitor = SunPositionMonitor.__new__(SunPositionMonitor)
     monitor.hass = hass
     monitor._coordinator = coordinator(hass, {"notify_service": "notify.phone"})
+    monitor._coordinator.shutters["cover.kitchen"] = ManagedShutter("cover.kitchen", "Küche")
     notify = AsyncMock()
     monkeypatch.setattr(type(hass.services), "async_call", notify)
     area = {"name": "Süd", "sun_position_target": 30}
-    await monitor._send_notification(area, ["Küche"], 30)
+    await monitor._send_notification(area, ["cover.kitchen"], 30)
     assert notify.call_args.args[2]["message"] == "Sonnenstandsregel 'Süd': 1 Rollladen auf 30% gefahren."
-    await monitor._send_prenotification(area, 1, 5)
+    await monitor._send_prenotification(area, ["cover.kitchen"], 5)
     assert notify.call_args.args[2]["message"] == "Sonnenstandsregel 'Süd': Rollläden fahren in etwa 5 Minuten auf 30%."
-    await monitor._send_prenotification(area, 1, 1)
+    await monitor._send_prenotification(area, ["cover.kitchen"], 1)
     assert notify.call_args.args[2]["message"] == "Sonnenstandsregel 'Süd': Rollläden fahren in etwa 1 Minute auf 30%."
 
 

@@ -1572,6 +1572,26 @@
           font-size: 0.85em; color: var(--ssm-muted); background: var(--ssm-card-bg);
           border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); padding: 10px 12px; margin: 12px 0;
         }
+        .notification-info { display: inline-block; vertical-align: middle; margin-left: 4px; }
+        .notification-info summary {
+          display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+          border: 1px solid var(--ssm-border); border-radius: 50%; color: var(--ssm-muted); cursor: pointer;
+          font-size: 0.88em; font-weight: 700; line-height: 1; list-style: none;
+        }
+        .notification-info summary::-webkit-details-marker { display: none; }
+        .notification-info summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+        .notification-info-text {
+          position: absolute; z-index: 5; top: 32px; left: 0; width: min(280px, 100%); box-sizing: border-box;
+          padding: 10px 12px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm);
+          background: var(--ssm-card-bg); box-shadow: var(--ssm-shadow); color: var(--primary-text-color);
+          font-size: 0.82em; font-weight: 400; line-height: 1.4;
+        }
+        .notification-title { position: relative; display: flex; align-items: center; gap: 2px; }
+        .notification-title h3 { margin-right: 0; }
+        .notification-title .notification-info { margin-left: auto; flex-shrink: 0; }
+        .notification-title .notification-info-text { left: auto; right: 0; }
+        .notification-hint { position: relative; display: block; width: 100%; }
+        .notification-status { display: block; min-height: 1.2em; margin: 4px 0 10px; font-size: 0.8em; color: var(--ssm-muted); }
         .error { color: var(--error-color, #c62828); }
         .settings-menu { display: flex; flex-direction: column; gap: 8px; }
         .settings-menu-item {
@@ -1925,7 +1945,11 @@
       const areaSaveBtn = ev.target.closest("[data-area-save]");
       if (areaSaveBtn) {
         this._haptic("selection");
-        this._collectAndSaveArea();
+        this._collectAndSaveArea().catch((err) => {
+          const status = this.shadowRoot.querySelector("[data-save-status]");
+          if (status) status.textContent = this._message("errorPrefix") + (err.message || String(err));
+          this._haptic("failure");
+        });
         return;
       }
       const scheduleEditBtn = ev.target.closest("[data-schedule-edit]");
@@ -2195,6 +2219,32 @@
         this._render();
         return;
       }
+      const notificationMode = ev.target.closest("[data-notification-mode]");
+      if (notificationMode) {
+        const form = notificationMode.closest("[data-notification-settings]");
+        form.querySelector("[data-notification-recipient-field]").style.display = notificationMode.value === "custom" ? "" : "none";
+        form.querySelector("[data-notification-recipient]").required = notificationMode.value === "custom";
+        const status = form.querySelector("[data-notification-status]");
+        if (status) status.textContent = "";
+        const recipient = form.querySelector("[data-notification-recipient]");
+        if (form.getAttribute("data-notification-autosave") === "true" &&
+            (notificationMode.value !== "custom" || recipient.value.trim())) {
+          this._queueNotificationSave(form, 0);
+        } else {
+          this._cancelNotificationSave(form);
+        }
+        return;
+      }
+      const notificationRecipient = ev.target.closest("[data-notification-recipient]");
+      if (notificationRecipient) {
+        const form = notificationRecipient.closest("[data-notification-settings]");
+        if (form.getAttribute("data-notification-autosave") === "true" &&
+            form.querySelector("[data-notification-mode]").value === "custom") {
+          if (notificationRecipient.value.trim()) this._queueNotificationSave(form, 0);
+          else this._cancelNotificationSave(form);
+        }
+        return;
+      }
       const managedCover = ev.target.closest("[data-managed-cover]");
       if (managedCover) {
         const id = managedCover.getAttribute("data-managed-cover");
@@ -2277,6 +2327,16 @@
     }
 
     _onInput(ev) {
+      const notificationRecipient = ev.target.closest("[data-notification-recipient]");
+      if (notificationRecipient) {
+        const form = notificationRecipient.closest("[data-notification-settings]");
+        if (form.getAttribute("data-notification-autosave") === "true" &&
+            form.querySelector("[data-notification-mode]").value === "custom") {
+          if (notificationRecipient.value.trim()) this._queueNotificationSave(form, 650);
+          else this._cancelNotificationSave(form);
+        }
+        return;
+      }
       const managedName = ev.target.closest("[data-managed-cover-name]");
       if (managedName) {
         const id = managedName.getAttribute("data-managed-cover-name");
@@ -3495,6 +3555,9 @@
         </div>
       `;
 
+      const notifications = (this._backendConfig && this._backendConfig.shutter_notifications) || {};
+      html += this._renderNotificationSettings(notifications[s.coverEntityId] || {}, s.coverEntityId);
+
       if (mode === "global") {
         // Only read-only summary - no detail sliders,
         // those that would have no effect anyway (see scheduler.py: at
@@ -3853,6 +3916,183 @@
       }
     }
 
+    _notificationMode(settings) {
+      return settings.notification_mode || ((settings.notify_service || "").trim() ? "custom" : "inherit");
+    }
+
+    _renderNotificationSettings(settings, coverEntityId = null, areaId = null) {
+      const de = this._language() === "de";
+      const area = !coverEntityId;
+      const autosave = !area || !!areaId;
+      const saveKey = coverEntityId ? `shutter:${coverEntityId}` : areaId ? `area:${areaId}` : null;
+      const state = saveKey && this._notificationSaveStates && this._notificationSaveStates.get(saveKey);
+      const displaySettings = state && state.draft && state.revision > state.savedRevision
+        ? { ...settings, notification_mode: state.draft.mode, notify_service: state.draft.notifyService }
+        : settings;
+      const mode = this._notificationMode(displaySettings);
+      const hintLabel = de ? "Hinweis anzeigen" : "Show information";
+      const precedenceHint = area
+        ? (de ? "Vererben übernimmt die globale Einstellung. Einstellungen einzelner Rollläden haben Vorrang." : "Inherit uses the global setting. Individual shutter settings take priority.")
+        : (de ? "Vererben übernimmt die Bereichseinstellung, sonst die globale Einstellung. Bei mehreren Bereichen gilt für Zeitplanmeldungen der erste ausdrücklich konfigurierte Bereich; Sonnenstandsmeldungen nutzen den auslösenden Bereich." : "Inherit uses the area setting, otherwise the global setting. For schedule notifications, the first explicitly configured area wins; sun notifications use the triggering area.");
+     const appliesHint = de
+       ? "Gilt für Bewegungen, Frostschutz, Schließvorwarnungen und aktivierte Sonnenstandsmeldungen."
+       : "Applies to movements, frost protection, pre-close warnings, and enabled sun notifications.";
+      const notificationTitle = area ? "" : `<h3>${de ? "Benachrichtigungen" : "Notifications"}</h3>`;
+     return `<div class="notification-settings" data-notification-settings data-notification-autosave="${autosave ? "true" : "false"}" ${coverEntityId ? `data-notification-entity="${this._escapeHtml(coverEntityId)}"` : ""} ${areaId ? `data-notification-area-id="${this._escapeHtml(areaId)}"` : ""}>
+        <div class="notification-title">${notificationTitle}<details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${appliesHint}</span></details></div>
+        <div class="form-field">
+          <label>${de ? "Benachrichtigungen empfangen" : "Receive notifications"}
+            <select data-notification-mode ${area ? 'data-area-field="notification_mode"' : ""}>
+              <option value="inherit" ${mode === "inherit" ? "selected" : ""}>${de ? "Vererben" : "Inherit"}</option>
+              <option value="off" ${mode === "off" ? "selected" : ""}>${de ? "Aus" : "Off"}</option>
+              <option value="custom" ${mode === "custom" ? "selected" : ""}>${de ? "Eigener Empfänger" : "Custom recipient"}</option>
+            </select>
+          </label>
+        </div>
+        <div class="notification-hint"><details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${precedenceHint}</span></details></div>
+        <div class="form-field" data-notification-recipient-field style="${mode === "custom" ? "" : "display:none"}">
+          <label>${de ? "Benachrichtigungsdienst" : "Notification service"}
+            <input type="text" data-notification-recipient ${area ? 'data-area-field="notify_service"' : ""} value="${this._escapeHtml(displaySettings.notify_service || "").replace(/"/g, "&quot;")}" placeholder="notify.mobile_app_phone" ${mode === "custom" ? "required" : ""} />
+          </label>
+        </div>
+        <span class="notification-status" data-notification-status role="status" aria-live="polite">${this._escapeHtml(state && state.statusText || "")}</span>
+      </div>`;
+    }
+
+    _notificationSaveKey(form) {
+      const entityId = form.getAttribute("data-notification-entity");
+      const areaId = form.getAttribute("data-notification-area-id");
+      return entityId ? `shutter:${entityId}` : areaId ? `area:${areaId}` : null;
+    }
+
+    _notificationSaveState(key) {
+      if (!key) return null;
+      if (!this._notificationSaveStates) this._notificationSaveStates = new Map();
+      let state = this._notificationSaveStates.get(key);
+      if (!state) {
+        state = { key, timer: null, saving: false, queued: false, revision: 0, savedRevision: 0, draft: null, statusText: "" };
+        this._notificationSaveStates.set(key, state);
+      }
+      return state;
+    }
+
+    _notificationSaveForm(key) {
+      if (!this.shadowRoot) return null;
+      return [...this.shadowRoot.querySelectorAll("[data-notification-settings]")]
+        .find((form) => this._notificationSaveKey(form) === key) || null;
+    }
+
+    _setNotificationSaveStatus(state, message) {
+      state.statusText = message;
+      const form = this._notificationSaveForm(state.key);
+      const status = form && form.querySelector("[data-notification-status]");
+      if (status) status.textContent = message;
+    }
+
+    _notificationDraft(form) {
+      return {
+        mode: form.querySelector("[data-notification-mode]").value,
+        notifyService: form.querySelector("[data-notification-recipient]").value.trim(),
+      };
+    }
+
+    _notificationDraftIsSavable(draft) {
+      return !!draft && (draft.mode !== "custom" || !!draft.notifyService);
+    }
+
+    _scheduleNotificationSave(state, delay) {
+      if (state.timer) clearTimeout(state.timer);
+      if (state.saving) {
+        state.queued = true;
+        return;
+      }
+      state.timer = setTimeout(() => {
+        state.timer = null;
+        this._saveNotificationSettings(state);
+      }, delay);
+    }
+
+    _queueNotificationSave(form, delay) {
+      const key = this._notificationSaveKey(form);
+      const state = this._notificationSaveState(key);
+      if (!state) return;
+      state.revision += 1;
+      state.draft = this._notificationDraft(form);
+      state.entityId = form.getAttribute("data-notification-entity");
+      state.areaId = form.getAttribute("data-notification-area-id");
+      state.entryId = this._backendConfig && this._backendConfig.entry_id;
+      this._setNotificationSaveStatus(state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
+      if (!this._notificationDraftIsSavable(state.draft)) {
+        this._scheduleNotificationSave(state, delay);
+        return;
+      }
+      this._scheduleNotificationSave(state, delay);
+    }
+
+    _cancelNotificationSave(form) {
+      const key = this._notificationSaveKey(form);
+      const state = this._notificationSaveStates && this._notificationSaveStates.get(key);
+      if (!state) return;
+      state.revision += 1;
+      state.draft = this._notificationDraft(form);
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+      }
+      if (state.saving) state.queued = true;
+      this._setNotificationSaveStatus(state, "");
+    }
+
+    async _saveNotificationSettings(state) {
+      if (state.saving) {
+        state.queued = true;
+        return;
+      }
+      if (!this._notificationDraftIsSavable(state.draft)) return;
+      const revision = state.revision;
+      const { mode, notifyService } = state.draft;
+      state.saving = true;
+      state.queued = false;
+      this._setNotificationSaveStatus(state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
+      try {
+        if (state.entityId) {
+          await this._hass.callWS({
+            type: "smart_shutter/save_shutter_notifications",
+            entry_id: state.entryId,
+            entity_id: state.entityId,
+            notification_mode: mode,
+            notify_service: mode === "custom" ? notifyService : "",
+          });
+        } else if (state.areaId) {
+          await this._hass.callWS({
+            type: "smart_shutter/save_own_area_settings",
+            entry_id: state.entryId,
+            area_id: state.areaId,
+            fields: { notification_mode: mode, notify_service: mode === "custom" ? notifyService : "" },
+          });
+        } else {
+          return;
+        }
+        await this._loadBackendConfig();
+        state.savedRevision = Math.max(state.savedRevision, revision);
+        if (revision === state.revision) {
+          this._haptic("success");
+          this._setNotificationSaveStatus(state, this._language() === "de" ? "Automatisch gespeichert." : "Saved automatically.");
+        }
+      } catch (err) {
+        if (revision === state.revision) {
+          this._haptic("failure");
+          this._setNotificationSaveStatus(state, this._message("errorPrefix") + (err && err.message ? err.message : String(err)));
+        }
+      } finally {
+        state.saving = false;
+        if (state.queued || revision !== state.revision) {
+          state.queued = false;
+          if (this._notificationDraftIsSavable(state.draft)) this._scheduleNotificationSave(state, 0);
+        }
+      }
+    }
+
     async _saveShutterNote(coverEntityId, note) {
       const body = this.shadowRoot.querySelector(".body");
       const statusEl = body.querySelector("[data-save-status]");
@@ -4172,7 +4412,9 @@
         html += textAreaField(
           "sun_prenotify_text",
           "Warning text (optional, Jinja template)",
-          "Variables: {{ area }}, {{ count }}, {{ position }}, {{ minutes }}. Empty = default text.",
+          this._language() === "de"
+            ? "Variablen: {{ area }}, {{ count }}, {{ names }}, {{ position }}, {{ minutes }}. Leer = Standardtext."
+            : "Variables: {{ area }}, {{ count }}, {{ names }}, {{ position }}, {{ minutes }}. Empty = default text.",
           "{{ area }}: shutters will move to {{ position }}% in about {{ minutes }} minutes."
         );
       }
@@ -4181,21 +4423,11 @@
       const notifySection = this._sectionToggle(
         "notify",
         "Benachrichtigungen (optional)",
-        !!(existing && (existing.notify_service || "").trim())
+        !!(existing && this._notificationMode(existing) !== "inherit")
       );
       html += notifySection.headerHtml;
       if (notifySection.isOpen) {
-      html += `
-        <div class="hint">
-          Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used.
-        </div>
-      `;
-      html += `
-        <div class="form-field">
-          <label>Notification service for this area</label>
-          <input type="text" data-area-field="notify_service" value="${existing && existing.notify_service ? existing.notify_service : ""}" placeholder="z.B. notify.mobile_app_guest_phone" />
-        </div>
-      `;
+      html += this._renderNotificationSettings(existing || {}, null, existing && existing.id);
       }
 
       const frostSection = sectionToggle(
@@ -4536,17 +4768,23 @@
       await this._submitSchedules(newList, false, statusEl);
     }
 
-    async _saveAreas(areas) {
+    async _saveAreas(areas, navigate = true) {
       try {
         const result = await this._hass.callWS({ type: "smart_shutter/save_custom_areas", areas });
         if (result.success) {
           await this._loadBackendConfig();
-          this._editingAreaId = null;
-          this._view = "settings-areas";
+          if (navigate) {
+            this._editingAreaId = null;
+            this._view = "settings-areas";
+          }
         }
-        this._render();
+        if (navigate) this._render();
+        return !!result.success;
       } catch (err) {
-        this._render();
+        const status = this.shadowRoot.querySelector("[data-save-status]");
+        if (status) status.textContent = this._message("errorPrefix") + (err.message || String(err));
+        this._haptic("failure");
+        return false;
       }
     }
 
@@ -4622,8 +4860,12 @@
         sun_prenotify_text: readText("sun_prenotify_text"),
         inside_temp_sensor: readEntityPicker("inside_temp_sensor"),
         frost_threshold_c: readFloat("frost_threshold_c"),
+        notification_mode: readSelect("notification_mode") || this._notificationMode(existing || {}),
         notify_service: readText("notify_service"),
       };
+      if (operationalFields.notification_mode !== "custom") operationalFields.notify_service = "";
+      const recipient = body.querySelector("[data-notification-recipient]");
+      if (operationalFields.notification_mode === "custom" && recipient && !recipient.reportValidity()) return;
       if (
         operationalFields.sun_position_enabled &&
         (operationalFields.sun_azimuth_from === null ||
@@ -4689,12 +4931,19 @@
         const coverEntityId = cb.getAttribute("data-area-member");
         const current = shutterAreas[coverEntityId] || [];
         const withoutThisArea = current.filter((id) => id !== areaId);
-        shutterAreas[coverEntityId] = cb.checked ? [...withoutThisArea, areaId] : withoutThisArea;
+        shutterAreas[coverEntityId] = cb.checked
+          ? (current.includes(areaId) ? current : [...current, areaId])
+          : withoutThisArea;
         if (!shutterAreas[coverEntityId].length) delete shutterAreas[coverEntityId];
       });
 
+      // Validate the area before changing membership; keep the draft on errors.
+      if (!await this._saveAreas(areas, false)) return;
+      this._editingAreaId = areaId;
       await this._saveShutterAreas(shutterAreas);
-      await this._saveAreas(areas);
+      this._editingAreaId = null;
+      this._view = "settings-areas";
+      this._render();
     }
 
     async _applyAreaToMembers(areaId) {

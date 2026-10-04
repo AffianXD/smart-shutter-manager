@@ -43,6 +43,7 @@ from .const import (
     CONF_PRE_NOTIFY_LEAD,
     CONF_SHUTTER_AREAS,
     CONF_SHUTTER_NOTES,
+    CONF_SHUTTER_NOTIFICATIONS,
     CONF_STAGGER_DELAY_MS,
     CUSTOM_AREA_ID_PREFIX,
     CUSTOM_SCHEDULE_ID_PREFIX,
@@ -62,6 +63,7 @@ from .const import (
 )
 from .scheduler import compute_forecast, find_overlapping_rules
 from .shutter_management import available_covers, async_update_covers
+from .notification_settings import notification_mode, validate_notification_settings
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,6 +108,14 @@ def _cover_allowed(coordinator, cover_entity_id: str, allowed_area_ids: set[str]
     return any(a in allowed_area_ids for a in shutter_area_ids)
 
 
+def _validate_area_notifications(hass, area, existing) -> None:
+    """Validate changed recipients without rejecting unchanged legacy settings."""
+    if (notification_mode(area), area.get("notify_service")) != (
+        notification_mode(existing), existing.get("notify_service")
+    ):
+        area.update(validate_notification_settings(hass, area))
+
+
 def _compute_all_conflicts(schedules: list[dict]) -> dict[str, list[str]]:
     """Checks all custom profiles pairwise for overlaps (not just when creating/editing a single one) - basis for the permanently visible conflict display in the map (FR15). Returns {rule_id: [rule_id, ...]} only for profiles that ACTUALLY collide with at least one other."""
     conflicts: dict[str, list[str]] = {}
@@ -146,6 +156,7 @@ async def handle_get_config(hass, connection, msg):
                 "basic_settings": {},
                 "custom_areas": [],
                 "shutter_areas": {},
+                "shutter_notifications": {},
                 "area_auto_temp_sensors": {},
                 "custom_schedules": [],
                 "schedule_conflicts": {},
@@ -273,6 +284,11 @@ async def handle_get_config(hass, connection, msg):
             "external_triggers": external_triggers,
             "covers": covers,
             "shutter_notes": shutter_notes,
+            "shutter_notifications": {
+                entity_id: settings
+                for entity_id, settings in coordinator.shutter_notifications.items()
+                if entity_id in allowed_cover_ids
+            },
         },
     )
 
@@ -666,7 +682,7 @@ async def handle_save_own_area_settings(hass, connection, msg):
         "sun_condition_template", "sun_notify_enabled", "sun_notify_text",
         "sun_prenotify_enabled", "sun_prenotify_lead_minutes", "sun_prenotify_text",
         "inside_temp_sensor", "frost_threshold_c",
-        "notify_service",  # v0.20: own notification recipient for this area
+        "notify_service", "notification_mode",
     }
     fields = {k: v for k, v in msg["fields"].items() if k in ALLOWED_FIELDS}
 
@@ -676,7 +692,13 @@ async def handle_save_own_area_settings(hass, connection, msg):
         connection.send_error(msg["id"], "not_found", "Area not found.")
         return
 
-    areas[idx] = {**areas[idx], **fields}
+    updated_area = {**areas[idx], **fields}
+    try:
+        _validate_area_notifications(hass, updated_area, areas[idx])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_notifications", str(err))
+        return
+    areas[idx] = updated_area
     data = dict(entry.options)
     data[CONF_CUSTOM_AREAS] = areas
     hass.config_entries.async_update_entry(entry, options=data)
@@ -780,7 +802,8 @@ async def handle_save_custom_areas(hass, connection, msg):
         connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
         return
 
-    areas = msg["areas"]
+    areas = [dict(area) for area in msg["areas"]]
+    existing_areas = {area.get("id"): area for area in entry.options.get(CONF_CUSTOM_AREAS, [])}
     for area in areas:
         if not area.get("id"):
             area["id"] = f"{CUSTOM_AREA_ID_PREFIX}{uuid.uuid4().hex[:8]}"
@@ -788,6 +811,12 @@ async def handle_save_custom_areas(hass, connection, msg):
             connection.send_result(
                 msg["id"], {"success": False, "validation_error": "no_name", "area_id": area.get("id")}
             )
+            return
+
+        try:
+            _validate_area_notifications(hass, area, existing_areas.get(area["id"], {}))
+        except ValueError as err:
+            connection.send_error(msg["id"], "invalid_notifications", str(err))
             return
 
     data = dict(entry.options)
@@ -872,6 +901,43 @@ Not admin-only: anyone who has access to the area of the shutter (or is an admin
 
 
 @websocket_api.websocket_command({
+    vol.Required("type"): "smart_shutter/save_shutter_notifications",
+    vol.Optional("entry_id"): str,
+    vol.Required("entity_id"): str,
+    vol.Required("notification_mode"): vol.In(("inherit", "off", "custom")),
+    vol.Optional("notify_service", default=""): str,
+})
+@websocket_api.async_response
+async def handle_save_shutter_notifications(hass, connection, msg):
+    """Update only one accessible managed shutter's notification settings."""
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
+        return
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    entity_id = msg["entity_id"]
+    if not _cover_allowed(coordinator, entity_id, _allowed_area_ids(coordinator, connection)):
+        connection.send_error(msg["id"], "unauthorized", "No access to this shutter.")
+        return
+    if entity_id not in coordinator.shutters:
+        connection.send_error(msg["id"], "not_found", "Managed shutter not found.")
+        return
+    try:
+        settings = validate_notification_settings(hass, msg)
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_notifications", str(err))
+        return
+    overrides = dict(coordinator.shutter_notifications)
+    if settings["notification_mode"] == "inherit":
+        overrides.pop(entity_id, None)
+    else:
+        overrides[entity_id] = settings
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_SHUTTER_NOTIFICATIONS: overrides})
+    _notify_reload(hass, entry)
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_api.websocket_command({
     vol.Required("type"): "smart_shutter/get_available_covers",
     vol.Optional("entry_id"): str,
 })
@@ -929,3 +995,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_save_own_area_settings)
     websocket_api.async_register_command(hass, handle_save_own_area_schedules)
     websocket_api.async_register_command(hass, handle_save_shutter_note)
+    websocket_api.async_register_command(hass, handle_save_shutter_notifications)

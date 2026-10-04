@@ -207,17 +207,24 @@ class SunPositionMonitor:
         ]
         if not members:
             return
-        self.hass.async_create_task(self._send_prenotification(area, len(members), eta_minutes))
+        self.hass.async_create_task(self._send_prenotification(area, members, eta_minutes))
 
-    async def _send_prenotification(self, area: dict, member_count: int, eta_minutes: float) -> None:
-        # v0.20: Area-specific Notify-Service-Override (e.g. for
-        # Airbnb guests) take precedence over the global - see
-        # coordinator.effective_notify_service for same logic per
-        # Roller shutter (multiple areas possible here, but only one is needed
-        # direct view of THIS particular area).
-        notify_service = (area.get("notify_service") or "").strip() or self._coordinator.notify_service
-        if not notify_service or "." not in notify_service:
-            return
+    def _notification_groups(self, area: dict, members: list[str]) -> dict[str, list[str]]:
+        """Group only enabled shutters by recipient in the triggering area's context."""
+        groups: dict[str, list[str]] = {}
+        for entity_id in dict.fromkeys(members):
+            service = self._coordinator.effective_notify_service(entity_id, area)
+            if not service or "." not in service:
+                continue
+            shutter = self._coordinator.shutters.get(entity_id)
+            groups.setdefault(service, []).append(shutter.name if shutter else entity_id)
+        return groups
+
+    async def _send_prenotification(self, area: dict, members: list[str], eta_minutes: float) -> None:
+        for service, names in self._notification_groups(area, members).items():
+            await self._send_group_prenotification(area, names, eta_minutes, service)
+
+    async def _send_group_prenotification(self, area: dict, names: list[str], eta_minutes: float, notify_service: str) -> None:
 
         template_str = notification_template(
             self.hass, "sun_prenotify_text", (area.get("sun_prenotify_text") or "").strip(), DEFAULT_SUN_PRENOTIFY_TEXT,
@@ -226,7 +233,8 @@ class SunPositionMonitor:
             "area": area.get("name"),
             "bereich": area.get("name"),
             "position": area.get("sun_position_target"),
-            "count": member_count,
+            "count": len(names),
+            "names": ", ".join(names),
             "minutes": round(eta_minutes),
             "minuten": round(eta_minutes),
         }
@@ -281,7 +289,7 @@ Since v0.17, 'outside_temp' and 'inside_temp' (float or None, see coordinator.ar
             len(members),
             target_position,
         )
-        moved_names: list[str] = []
+        moved_members: list[str] = []
         for cover_entity_id in members:
             cover_state = self.hass.states.get(cover_entity_id)
             supported = cover_state.attributes.get("supported_features", 0) if cover_state else 0
@@ -308,18 +316,16 @@ Since v0.17, 'outside_temp' and 'inside_temp' (float or None, see coordinator.ar
                 f"Area '{area.get('name')}': moved to {target_position}% (sun position rule)",
                 dt_util.now().isoformat(),
             )
-            shutter = self._coordinator.shutters.get(cover_entity_id)
-            moved_names.append(shutter.name if shutter else cover_entity_id)
+            moved_members.append(cover_entity_id)
 
-        if area.get("sun_notify_enabled") and moved_names:
-            self.hass.async_create_task(self._send_notification(area, moved_names, target_position))
+        if area.get("sun_notify_enabled") and moved_members:
+            self.hass.async_create_task(self._send_notification(area, moved_members, target_position))
 
-    async def _send_notification(self, area: dict, names: list[str], target_position: int) -> None:
-        # v0.20: Area-specific Notify-Service-Override - see
-        # Reason in _send_prenotification.
-        notify_service = (area.get("notify_service") or "").strip() or self._coordinator.notify_service
-        if not notify_service or "." not in notify_service:
-            return
+    async def _send_notification(self, area: dict, members: list[str], target_position: int) -> None:
+        for service, names in self._notification_groups(area, members).items():
+            await self._send_group_notification(area, names, target_position, service)
+
+    async def _send_group_notification(self, area: dict, names: list[str], target_position: int, notify_service: str) -> None:
 
         template_str = notification_template(
             self.hass, "sun_notify_text", (area.get("sun_notify_text") or "").strip(), DEFAULT_SUN_NOTIFY_TEXT,
