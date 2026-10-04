@@ -57,9 +57,16 @@ def test_all_card_websocket_commands_are_registered(monkeypatch) -> None:
 
     ws.async_register_websocket_commands(object())
 
-    assert len(names) == 15
-    assert len(set(names)) == 15
-    assert {"handle_get_config", "handle_save_own_area_settings", "handle_save_own_area_schedules", "handle_get_forecast", "handle_save_shutter_notifications"} <= set(names)
+    assert len(names) == 16
+    assert len(set(names)) == 16
+    assert {
+        "handle_get_config",
+        "handle_save_shortcuts",
+        "handle_save_shutter_notifications",
+        "handle_save_own_area_settings",
+        "handle_save_own_area_schedules",
+        "handle_get_forecast",
+    } <= set(names)
 
 
 def test_frost_blocks_for_binary_sensor_or_either_assigned_area() -> None:

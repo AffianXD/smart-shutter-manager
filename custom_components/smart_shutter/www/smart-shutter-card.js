@@ -318,6 +318,43 @@
       "Target Position": "Zielposition",
       "Target Position (optional)": "Zielposition (optional)",
       "Back": "Zurück",
+      "Customize shortcuts": "Shortcuts anpassen",
+      "Dashboard shortcuts": "Startseiten-Shortcuts",
+      "Create shortcuts for frequent actions and pages.": "Lege Shortcuts für häufige Aktionen und Ansichten an.",
+      "Changes apply to all users of this Smart Shutter instance.": "Die Änderungen gelten für alle Nutzer dieser Smart-Shutter-Instanz.",
+      "Create, edit, and arrange home page shortcuts": "Shortcuts für die Startseite anlegen, bearbeiten und sortieren",
+      "Add shortcut": "Shortcut hinzufügen",
+      "No shortcuts yet.": "Noch keine Shortcuts angelegt.",
+      "Move up": "Nach oben",
+      "Move down": "Nach unten",
+      "Shortcut name": "Shortcut-Name",
+      "Icon (MDI)": "Icon (MDI)",
+      "Shortcut type": "Shortcut-Typ",
+      "Cover action": "Rollladen-Aktion",
+      "Postpone action": "Aktion verschieben",
+      "Skip action": "Aktion überspringen",
+      "Automation": "Automatik",
+      "Open a view": "Ansicht öffnen",
+      "All managed shutters": "Alle verwalteten Rollläden",
+      "Select area": "Bereich auswählen",
+      "Minutes": "Minuten",
+      "Disable": "Ausschalten",
+      "Destination": "Zielansicht",
+      "Save shortcut": "Shortcut speichern",
+      "Overview": "Übersicht",
+      "Area settings": "Bereichseinstellungen",
+      "Basic settings": "Basis-Einstellungen",
+      "Schedules": "Zeitpläne",
+      "External triggers": "Externe Trigger",
+      "Global settings": "Globale Einstellungen",
+      "Manage shutters": "Rollläden verwalten",
+      "Edit": "Bearbeiten",
+      "Delete": "Löschen",
+      "Stop": "Stopp",
+      "Shortcut saved.": "Shortcut gespeichert.",
+      "Shortcut configuration saved.": "Shortcut-Konfiguration gespeichert.",
+      "Shortcut deleted.": "Shortcut gelöscht.",
+      "A target is no longer available for this shortcut.": "Das Ziel dieses Shortcuts ist nicht mehr verfügbar.",
       "Back to Settings Menu": "Zurück zum Einstellungsmenü",
       "Back to List": "Zurück zur Liste",
       "Back to Overview": "Zurück zur Übersicht",
@@ -343,8 +380,30 @@
   };
   const CARD_MESSAGES = {
     en: {
-      bulkPostpone: (action, minutes) => `${action} for all shutters postponed by ${minutes} min`,
-      bulkSkip: (action) => `${action} for all shutters skipped today`,
+      coverAction: "Cover action",
+      postponeAction: "Postpone action",
+      skipAction: "Skip action",
+      automation: "Automation",
+      openView: "Open a view",
+      allShutters: "All managed shutters",
+      unavailableTarget: "A target is no longer available for this shortcut.",
+      minutes: "minutes",
+      enable: "Enable",
+      disable: "Disable",
+      action_open: "Open",
+      action_close: "Close",
+      action_stop: "Stop",
+      view_overview: "Overview",
+      view_list: "Shutters",
+      "view_settings-areas": "Area settings",
+      "view_settings-basic": "Basic settings",
+      "view_settings-schedules": "Schedules",
+      "view_settings-triggers": "External triggers",
+      "view_settings-global": "Global settings",
+      "view_settings-shutters": "Manage shutters",
+      invalidShortcut: "Please check the shortcut details and target.",
+      bulkPostpone: (action, minutes, target) => `${action} for ${target} postponed by ${minutes} min`,
+      bulkSkip: (action, target) => `${action} for ${target} skipped today`,
       overrideCleared: "Override cleared; regular schedule is active again",
       overrideNotice: (until, source) => `A manual postpone/skip is active until ${until}${source ? ` (source: ${source})` : ""} and currently takes priority over the regular schedule. Changes to individual times will take effect after it expires.`,
       manualPauseNotice: (until) => `Movement outside this automation was detected (wall switch, remote control, or another automation). Automation for this shutter is paused until ${until}.`,
@@ -371,8 +430,30 @@
       notePrefix: "Note",
     },
     de: {
-      bulkPostpone: (action, minutes) => `${action} für alle Rollläden um ${minutes} Min. verschoben`,
-      bulkSkip: (action) => `${action} für alle Rollläden heute übersprungen`,
+      coverAction: "Rollladen-Aktion",
+      postponeAction: "Aktion verschieben",
+      skipAction: "Aktion überspringen",
+      automation: "Automatik",
+      openView: "Ansicht öffnen",
+      allShutters: "Alle verwalteten Rollläden",
+      unavailableTarget: "Das Ziel dieses Shortcuts ist nicht mehr verfügbar.",
+      minutes: "Minuten",
+      enable: "Einschalten",
+      disable: "Ausschalten",
+      action_open: "Öffnen",
+      action_close: "Schließen",
+      action_stop: "Stopp",
+      view_overview: "Übersicht",
+      view_list: "Rollläden",
+      "view_settings-areas": "Bereichseinstellungen",
+      "view_settings-basic": "Basis-Einstellungen",
+      "view_settings-schedules": "Zeitpläne",
+      "view_settings-triggers": "Externe Trigger",
+      "view_settings-global": "Globale Einstellungen",
+      "view_settings-shutters": "Rollläden verwalten",
+      invalidShortcut: "Bitte prüfe die Angaben und das Shortcut-Ziel.",
+      bulkPostpone: (action, minutes, target) => `${action} für ${target} um ${minutes} Min. verschoben`,
+      bulkSkip: (action, target) => `${action} für ${target} heute übersprungen`,
       overrideCleared: "Manuelle Änderung aufgehoben – der reguläre Zeitplan gilt wieder",
       overrideNotice: (until, source) => `Ein manuelles Verschieben oder Auslassen ist bis ${until} aktiv${source ? ` (Quelle: ${source})` : ""} und hat derzeit Vorrang vor dem regulären Zeitplan. Individuelle Zeitänderungen greifen wieder, sobald die Änderung abläuft.`,
       manualPauseNotice: (until) => `Es wurde eine Bewegung erkannt, die nicht von der Automatik kam (Wandschalter, Fernbedienung oder andere Automation). Die Automatik für diesen Rollladen ist bis ${until} pausiert.`,
@@ -483,6 +564,7 @@
       this._globalTimelineSelectedIdx = null;
       this._globalTimelineGroups = [];
       this._editingAreaId = null;
+      this._editingShortcutId = null;
       this._sunAdvancedExpanded = false;
       this._areaSectionExpanded = {};
       this._sunDirectionOverride = undefined;
@@ -1156,12 +1238,13 @@
       }
     }
 
-    async _bulkPostponeAll(action, minutes) {
+    async _bulkPostponeAll(action, minutes, targetIds = null, targetName = null) {
       this._haptic("success");
       const actionLabel = this._language() === "de" ? (action === "open" ? "Öffnen" : "Schließen") : (action === "open" ? "Open" : "Close");
-      this._showToast(this._message("bulkPostpone", actionLabel, minutes));
+      const ids = targetIds || this._model.shutters.map((s) => s.coverEntityId);
+      const targetLabel = targetName || (this._language() === "de" ? "alle Rollläden" : "all shutters");
+      this._showToast(this._message("bulkPostpone", actionLabel, minutes, targetLabel));
       this._invalidateForecastCache();
-      const ids = this._model.shutters.map((s) => s.coverEntityId);
       await Promise.all(
         ids.map((id) =>
           this._hass.callService(DOMAIN, "postpone_action", {
@@ -1174,12 +1257,13 @@
       );
     }
 
-    async _bulkSkipAll(action) {
+    async _bulkSkipAll(action, targetIds = null, targetName = null) {
       this._haptic("success");
       const actionLabel = this._language() === "de" ? (action === "open" ? "Öffnen" : "Schließen") : (action === "open" ? "Open" : "Close");
-      this._showToast(this._message("bulkSkip", actionLabel));
+      const ids = targetIds || this._model.shutters.map((s) => s.coverEntityId);
+      const targetLabel = targetName || (this._language() === "de" ? "alle Rollläden" : "all shutters");
+      this._showToast(this._message("bulkSkip", actionLabel, targetLabel));
       this._invalidateForecastCache();
-      const ids = this._model.shutters.map((s) => s.coverEntityId);
       await Promise.all(
         ids.map((id) =>
           this._hass.callService(DOMAIN, "skip_action", {
@@ -1405,6 +1489,37 @@
         if (stopBtn) stopBtn.disabled = !canStop;
         if (closeBtn) closeBtn.disabled = !canClose;
       }
+      this._syncShortcutButtons(root);
+    }
+
+    _shortcutMembers(shortcut) {
+      if (!this._model) return [];
+      return shortcut.target === "all" ? this._model.shutters : this._areaMembers(shortcut.target);
+    }
+
+    _syncShortcutButtons(root) {
+      if (!this._model) return;
+      const shortcuts = (this._backendConfig && this._backendConfig.shortcuts) || [];
+      root.querySelectorAll("[data-custom-shortcut]").forEach((button) => {
+        const shortcut = shortcuts.find((item) => item.id === button.getAttribute("data-custom-shortcut"));
+        button.disabled = shortcut ? this._shortcutIsDisabled(shortcut) : true;
+      });
+    }
+
+    _shortcutIsDisabled(shortcut) {
+      if (!shortcut || shortcut.kind === "navigate") return false;
+      const members = this._shortcutMembers(shortcut);
+      if (shortcut.kind === "cover") {
+        const state = this._groupMotionState(members.map((item) => item.coverEntityId));
+        return !state[{ open: "canOpen", close: "canClose", stop: "canStop" }[shortcut.action]];
+      }
+      if (shortcut.kind === "automation" && shortcut.target === "all") {
+        return !this._model.globalEntities.automation[shortcut.action];
+      }
+      if (shortcut.kind === "automation") {
+        return !members.some((item) => item.entities.automation[shortcut.action]);
+      }
+      return members.length === 0;
     }
 
     _css() {
@@ -1627,6 +1742,7 @@
           width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: var(--ssm-radius-sm);
           border: 1px solid var(--ssm-border); background: var(--ssm-card-bg); color: inherit; font-family: inherit;
         }
+        .form-field ha-icon-picker { display: block; width: 100%; }
         .entity-picker-slot ha-entity-picker { width: 100%; display: block; }
         .managed-cover-row { margin-bottom: 20px; min-width: 0; overflow-wrap: anywhere; }
         .managed-cover-row .control-row { margin-bottom: 6px; flex-wrap: nowrap; align-items: flex-start; }
@@ -1765,7 +1881,7 @@
         }
         .ssm-next-action ha-icon { --mdc-icon-size: 18px; flex-shrink: 0; }
         .ssm-next-action strong { color: var(--primary-text-color); font-weight: 600; }
-        .ssm-shortcut-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .ssm-shortcut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 10px; }
         .ssm-shortcut-btn {
           display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 8px;
           background: var(--ssm-card-bg); color: var(--primary-text-color); border: 1px solid var(--ssm-border);
@@ -1847,6 +1963,51 @@
         this._haptic("selection");
         this._view = settingsNavBtn.getAttribute("data-settings-nav");
         if (this._view === "settings-shutters") this._loadManagedCovers();
+        this._render();
+        return;
+      }
+      const shortcutBtn = ev.target.closest("[data-custom-shortcut]");
+      if (shortcutBtn) {
+        this._runHomeShortcut(shortcutBtn.getAttribute("data-custom-shortcut"));
+        return;
+      }
+      const shortcutEditBtn = ev.target.closest("[data-shortcut-edit]");
+      if (shortcutEditBtn) {
+        this._editingShortcutId = shortcutEditBtn.getAttribute("data-shortcut-edit") === "__new__"
+          ? null
+          : shortcutEditBtn.getAttribute("data-shortcut-edit");
+        this._view = "settings-shortcut-edit";
+        this._render();
+        return;
+      }
+      const shortcutSaveBtn = ev.target.closest("[data-shortcut-save]");
+      if (shortcutSaveBtn) {
+        this._collectAndSaveShortcut();
+        return;
+      }
+      const shortcutDeleteBtn = ev.target.closest("[data-shortcut-delete]");
+      if (shortcutDeleteBtn) {
+        const id = shortcutDeleteBtn.getAttribute("data-shortcut-delete");
+        const shortcuts = (this._backendConfig.shortcuts || []).filter((item) => item.id !== id);
+        this._saveHomeShortcuts(shortcuts);
+        return;
+      }
+      const shortcutMoveBtn = ev.target.closest("[data-shortcut-move]");
+      if (shortcutMoveBtn) {
+        const [id, direction] = shortcutMoveBtn.getAttribute("data-shortcut-move").split(":");
+        const shortcuts = [...((this._backendConfig && this._backendConfig.shortcuts) || [])];
+        const index = shortcuts.findIndex((item) => item.id === id);
+        const nextIndex = index + (direction === "up" ? -1 : 1);
+        if (index >= 0 && nextIndex >= 0 && nextIndex < shortcuts.length) {
+          [shortcuts[index], shortcuts[nextIndex]] = [shortcuts[nextIndex], shortcuts[index]];
+          this._saveHomeShortcuts(shortcuts);
+        }
+        return;
+      }
+      const shortcutBackBtn = ev.target.closest("[data-shortcut-back]");
+      if (shortcutBackBtn) {
+        this._editingShortcutId = null;
+        this._view = "settings-shortcuts";
         this._render();
         return;
       }
@@ -2213,6 +2374,11 @@
     }
 
     _onChange(ev) {
+      const shortcutKind = ev.target.closest('[data-shortcut-field="kind"]');
+      if (shortcutKind) {
+        this._syncShortcutEditorFields();
+        return;
+      }
       const seasonSelect = ev.target.closest("[data-season-edit]");
       if (seasonSelect) {
         this._editingSeason = seasonSelect.value;
@@ -2507,11 +2673,16 @@
         body.innerHTML = this._renderSettingsAreas();
       } else if (this._view === "settings-area-edit") {
         body.innerHTML = this._renderAreaEdit();
+      } else if (this._view === "settings-shortcuts") {
+        body.innerHTML = this._renderHomeShortcuts();
+      } else if (this._view === "settings-shortcut-edit") {
+        body.innerHTML = this._renderHomeShortcutEdit();
       }
 
       // Sets current values in form controls (no re-render on every key press)
       this._syncControlValues(body);
       this._mountEntityPickers(body);
+      this._syncShortcutEditorFields();
       this._localizeDom();
     }
 
@@ -2627,18 +2798,20 @@
       const ge = this._model.globalEntities;
       const areas = (this._backendConfig && this._backendConfig.custom_areas) || [];
       const moreExpanded = !!this._dashMoreActionsExpanded;
-      const dashMotion = this._groupMotionState(this._model.shutters.map((s) => s.coverEntityId));
       return `
         <div class="ssm-dashboard">
           <h2 class="ssm-title">Smart Shutter Manager</h2>
-          <div data-overview-stats>${this._overviewStatsHtml()}</div>
+      <div data-overview-stats>${this._overviewStatsHtml()}</div>
 
-          <div class="ssm-section-label">Quick Access</div>
-          <div class="ssm-shortcut-grid">
-            <button data-bulk="open" class="ssm-shortcut-btn" ${dashMotion.canOpen ? "" : "disabled"}><ha-icon icon="mdi:arrow-up-bold-circle-outline"></ha-icon><span>All up</span></button>
-            <button data-bulk="stop" class="ssm-shortcut-btn ssm-shortcut-btn-muted" ${dashMotion.canStop ? "" : "disabled"}><ha-icon icon="mdi:stop-circle-outline"></ha-icon><span>Stop</span></button>
-            <button data-bulk="close" class="ssm-shortcut-btn" ${dashMotion.canClose ? "" : "disabled"}><ha-icon icon="mdi:arrow-down-bold-circle-outline"></ha-icon><span>All down</span></button>
-          </div>
+      <div class="ssm-section-label">Quick Access</div>
+      <div class="ssm-shortcut-grid">
+        ${((this._backendConfig && this._backendConfig.shortcuts) || []).map((shortcut) => `
+          <button data-custom-shortcut="${this._escapeHtml(shortcut.id)}" class="ssm-shortcut-btn" ${this._shortcutIsDisabled(shortcut) ? "disabled" : ""} aria-label="${this._escapeHtml(shortcut.name)}">
+            <ha-icon icon="${this._escapeHtml(shortcut.icon)}"></ha-icon><span>${this._escapeHtml(shortcut.name)}</span>
+          </button>
+        `).join("") || `<p class="empty">No shortcuts yet.</p>`}
+      </div>
+      ${this._isAdmin() ? `<button class="ssm-link-btn" type="button" data-settings-nav="settings-shortcuts">Customize shortcuts</button>` : ""}
 
           <div class="ssm-card ssm-automation-card">
             ${
@@ -3665,6 +3838,205 @@
       return html;
     }
 
+    _shortcutDescription(shortcut) {
+      const labels = {
+        cover: this._message("coverAction"),
+        postpone: this._message("postponeAction"),
+        skip: this._message("skipAction"),
+        automation: this._message("automation"),
+        navigate: this._message("openView"),
+      };
+      if (shortcut.kind === "navigate") return `${labels.navigate} · ${this._message(`view_${shortcut.view}`)}`;
+      const action = this._message(`action_${shortcut.action}`);
+      const target = shortcut.target === "all"
+        ? this._message("allShutters")
+        : (((this._backendConfig && this._backendConfig.custom_areas) || []).find((area) => area.id === shortcut.target) || {}).name || this._message("unavailableTarget");
+      if (shortcut.kind === "postpone") return `${labels.postpone} · ${action} · ${shortcut.minutes} ${this._message("minutes")}`;
+      if (shortcut.kind === "automation") return `${labels.automation} · ${action} · ${this._message(shortcut.enabled ? "enable" : "disable")}`;
+      return `${labels[shortcut.kind]} · ${action} · ${target}`;
+    }
+
+    _renderHomeShortcuts() {
+      const shortcuts = (this._backendConfig && this._backendConfig.shortcuts) || [];
+      let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
+      html += `<h2>Dashboard shortcuts</h2><div class="hint">Create shortcuts for frequent actions and pages.</div><div class="hint">Changes apply to all users of this Smart Shutter instance.</div>`;
+      if (!shortcuts.length) {
+        html += `<p class="empty">No shortcuts yet.</p>`;
+      } else {
+        shortcuts.forEach((shortcut, index) => {
+          const id = this._escapeHtml(shortcut.id);
+          html += `
+            <div class="list-item">
+              <ha-icon icon="${this._escapeHtml(shortcut.icon)}"></ha-icon>
+              <div class="main"><div class="name">${this._escapeHtml(shortcut.name)}</div><div class="meta">${this._escapeHtml(this._shortcutDescription(shortcut))}</div></div>
+              <div class="actions">
+                <button data-shortcut-move="${id}:up" title="Move up" aria-label="Move up" ${index === 0 ? "disabled" : ""}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+                <button data-shortcut-move="${id}:down" title="Move down" aria-label="Move down" ${index === shortcuts.length - 1 ? "disabled" : ""}><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+                <button data-shortcut-edit="${id}" title="Edit" aria-label="Edit"><ha-icon icon="mdi:pencil"></ha-icon></button>
+                <button data-shortcut-delete="${id}" title="Delete" aria-label="Delete"><ha-icon icon="mdi:delete"></ha-icon></button>
+              </div>
+            </div>`;
+        });
+      }
+      html += `<button class="add-btn" data-shortcut-edit="__new__"><ha-icon icon="mdi:plus"></ha-icon> Add shortcut</button>`;
+      html += `<span class="save-status" data-shortcut-status></span>`;
+      return html;
+    }
+
+    _renderHomeShortcutEdit() {
+      const shortcuts = (this._backendConfig && this._backendConfig.shortcuts) || [];
+      const existing = this._editingShortcutId ? shortcuts.find((item) => item.id === this._editingShortcutId) : null;
+      const value = (key, fallback = "") => this._escapeHtml(existing && existing[key] !== undefined ? existing[key] : fallback);
+      const kind = existing ? existing.kind : "cover";
+      const areas = (this._backendConfig && this._backendConfig.custom_areas) || [];
+      const staleTarget = existing && existing.target && existing.target !== "all"
+        && !areas.some((area) => area.id === existing.target);
+      const staleAreaOption = staleTarget
+        ? `<option value="${this._escapeHtml(existing.target)}" selected disabled>${this._message("unavailableTarget")}</option>`
+        : "";
+      const areaOptions = areas.map((area) => `<option value="${this._escapeHtml(area.id)}" ${value("target") === area.id ? "selected" : ""}>${this._escapeHtml(area.name)}</option>`).join("");
+      const selected = (key, option, fallback) => (existing ? existing[key] === option : fallback === option) ? "selected" : "";
+      const actionOptions = kind === "cover"
+        ? `<option value="open" ${selected("action", "open", "open")}>Open</option><option value="stop" ${selected("action", "stop", "open")}>Stop</option><option value="close" ${selected("action", "close", "open")}>Close</option>`
+        : `<option value="open" ${selected("action", "open", "open")}>Open</option><option value="close" ${selected("action", "close", "open")}>Close</option>`;
+      return `
+        <button class="back" data-shortcut-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back</button>
+        <h2>${existing ? "Edit" : "Add shortcut"}</h2>
+        <div class="form-field"><label>Shortcut name</label><input type="text" maxlength="40" required data-shortcut-field="name" value="${value("name")}" placeholder="e.g. Close downstairs" /></div>
+        <div class="form-field"><ha-icon-picker data-shortcut-field="icon" label="Icon (MDI)" required value="${value("icon", "mdi:window-shutter")}" placeholder="mdi:window-shutter"></ha-icon-picker></div>
+        <div class="form-field"><label>Shortcut type</label><select data-shortcut-field="kind">
+          <option value="cover" ${kind === "cover" ? "selected" : ""}>Cover action</option>
+          <option value="postpone" ${kind === "postpone" ? "selected" : ""}>Postpone action</option>
+          <option value="skip" ${kind === "skip" ? "selected" : ""}>Skip action</option>
+          <option value="automation" ${kind === "automation" ? "selected" : ""}>Automation</option>
+          <option value="navigate" ${kind === "navigate" ? "selected" : ""}>Open a view</option>
+        </select></div>
+        <div class="form-field" data-shortcut-only="cover,postpone,skip,automation"><label>Target</label><select data-shortcut-field="target">
+          ${staleAreaOption}<option value="all" ${selected("target", "all", "all")}>All managed shutters</option>${areaOptions}
+        </select></div>
+        <div class="form-field" data-shortcut-only="cover,postpone,skip,automation"><label>Action</label><select data-shortcut-field="action">${actionOptions}</select></div>
+        <div class="form-field" data-shortcut-only="postpone"><label>Minutes</label><input type="number" min="1" max="1440" step="1" data-shortcut-field="minutes" value="${value("minutes", "15")}" /></div>
+        <div class="form-field" data-shortcut-only="automation"><label>Automation</label><select data-shortcut-field="enabled">
+          <option value="true" ${selected("enabled", true, true)}>Enable</option><option value="false" ${selected("enabled", false, true)}>Disable</option>
+        </select></div>
+        <div class="form-field" data-shortcut-only="navigate"><label>Destination</label><select data-shortcut-field="view">
+          <option value="overview" ${selected("view", "overview", "overview")}>Overview</option>
+          <option value="list" ${selected("view", "list", "overview")}>Shutters</option>
+          <option value="settings-areas" ${selected("view", "settings-areas", "overview")}>Area settings</option>
+          <option value="settings-basic" ${selected("view", "settings-basic", "overview")}>Basic settings</option>
+          <option value="settings-schedules" ${selected("view", "settings-schedules", "overview")}>Schedules</option>
+          <option value="settings-triggers" ${selected("view", "settings-triggers", "overview")}>External triggers</option>
+          <option value="settings-global" ${selected("view", "settings-global", "overview")}>Global settings</option>
+          <option value="settings-shutters" ${selected("view", "settings-shutters", "overview")}>Manage shutters</option>
+        </select></div>
+        <button class="save-btn" data-shortcut-save><ha-icon icon="mdi:content-save"></ha-icon> Save shortcut</button>
+        <span class="save-status" data-shortcut-status></span>
+      `;
+    }
+
+    _syncShortcutEditorFields() {
+      const body = this.shadowRoot && this.shadowRoot.querySelector(".body");
+      const kindSelect = body && body.querySelector('[data-shortcut-field="kind"]');
+      if (!kindSelect) return;
+      const actionSelect = body.querySelector('[data-shortcut-field="action"]');
+      if (actionSelect) {
+        const actions = kindSelect.value === "cover" ? ["open", "stop", "close"] : ["open", "close"];
+        const current = actionSelect.value;
+        actionSelect.innerHTML = actions.map((action) => `<option value="${action}">${this._message(`action_${action}`)}</option>`).join("");
+        actionSelect.value = actions.includes(current) ? current : "open";
+      }
+      body.querySelectorAll("[data-shortcut-only]").forEach((field) => {
+        field.hidden = !field.getAttribute("data-shortcut-only").split(",").includes(kindSelect.value);
+      });
+    }
+
+    async _collectAndSaveShortcut() {
+      const body = this.shadowRoot.querySelector(".body");
+      const read = (key) => {
+        const field = body.querySelector(`[data-shortcut-field="${key}"]`);
+        return field ? field.value : "";
+      };
+      const kind = read("kind");
+      const shortcut = {
+        id: this._editingShortcutId || `shortcut-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        name: read("name").trim(),
+        icon: read("icon").trim(),
+        kind,
+      };
+      if (kind === "navigate") {
+        shortcut.view = read("view");
+      } else {
+        shortcut.target = read("target");
+        shortcut.action = read("action");
+        if (kind === "postpone") shortcut.minutes = Number(read("minutes"));
+        if (kind === "automation") shortcut.enabled = read("enabled") === "true";
+      }
+      const current = [...((this._backendConfig && this._backendConfig.shortcuts) || [])];
+      const index = current.findIndex((item) => item.id === shortcut.id);
+      if (index >= 0) current[index] = shortcut;
+      else current.push(shortcut);
+      await this._saveHomeShortcuts(current, "settings-shortcuts");
+    }
+
+    async _saveHomeShortcuts(shortcuts, successView = "settings-shortcuts") {
+      const status = this.shadowRoot.querySelector("[data-shortcut-status]");
+      try {
+        const result = await this._hass.callWS({
+          type: "smart_shutter/save_shortcuts",
+          entry_id: this._backendConfig && this._backendConfig.entry_id,
+          shortcuts,
+        });
+        if (!result.success) {
+          if (status) status.textContent = this._message("invalidShortcut");
+          return;
+        }
+        await this._loadBackendConfig();
+        this._editingShortcutId = null;
+        this._view = successView;
+        this._haptic("success");
+        this._render();
+      } catch (err) {
+        if (status) status.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+      }
+    }
+
+    async _runHomeShortcut(shortcutId) {
+      const shortcut = ((this._backendConfig && this._backendConfig.shortcuts) || []).find((item) => item.id === shortcutId);
+      if (!shortcut || this._shortcutIsDisabled(shortcut)) return;
+      if (shortcut.kind === "navigate") {
+        if (shortcut.view.startsWith("settings-") && !this._isAdmin() && shortcut.view !== "settings-areas") return;
+        this._view = shortcut.view;
+        if (shortcut.view === "settings-shutters") this._loadManagedCovers();
+        this._render();
+        return;
+      }
+      const members = this._shortcutMembers(shortcut);
+      const ids = members.map((item) => item.coverEntityId);
+      if (!ids.length) {
+        this._showToast(this._message("unavailableTarget"));
+        return;
+      }
+      const targetName = shortcut.target === "all"
+        ? (this._language() === "de" ? "alle Rollläden" : "all shutters")
+        : (((this._backendConfig && this._backendConfig.custom_areas) || []).find((area) => area.id === shortcut.target) || {}).name;
+      if (shortcut.kind === "cover") await this._bulkCoverAction(ids, shortcut.action);
+      else if (shortcut.kind === "postpone") await this._bulkPostponeAll(shortcut.action, shortcut.minutes, ids, targetName);
+      else if (shortcut.kind === "skip") await this._bulkSkipAll(shortcut.action, ids, targetName);
+      else if (shortcut.kind === "automation") {
+        const service = shortcut.enabled ? "turn_on" : "turn_off";
+        if (shortcut.target === "all") {
+          const entry = this._model.globalEntities.automation[shortcut.action];
+          if (entry) this._hass.callService("switch", service, { entity_id: entry.entity_id });
+        } else {
+          members.forEach((member) => {
+            const entry = member.entities.automation[shortcut.action];
+            if (entry) this._hass.callService("switch", service, { entity_id: entry.entity_id });
+          });
+        }
+        this._haptic("success");
+      }
+    }
+
     _renderSettings() {
       const backendError = this._backendError
         ? `<div class="hint error">${this._backendError}</div>`
@@ -3711,6 +4083,10 @@
           <button class="settings-menu-item" data-settings-nav="settings-areas">
             <ha-icon icon="mdi:compass-outline"></ha-icon>
             <div><div class="name">Areas</div><div class="meta">e.g. Front/Back/North/South - own groups with presets</div></div>
+          </button>
+          <button class="settings-menu-item" data-settings-nav="settings-shortcuts">
+            <ha-icon icon="mdi:gesture-tap-button"></ha-icon>
+            <div><div class="name">Dashboard shortcuts</div><div class="meta">Create, edit, and arrange home page shortcuts</div></div>
           </button>
           <button class="settings-menu-item" data-settings-nav="settings-global">
             <ha-icon icon="mdi:earth"></ha-icon>
