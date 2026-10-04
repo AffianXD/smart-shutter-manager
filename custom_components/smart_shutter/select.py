@@ -40,6 +40,7 @@ from .const import (
     position_source_registry_key,
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
+from .seasons import SEASONS, for_season, has_seasonal_profiles, seed_seasonal_entity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,6 +154,17 @@ async def async_setup_entry(
         len(entities),
     )
 
+    if has_seasonal_profiles(coordinator):
+        for season in SEASONS:
+            for action in (ACTION_OPEN, ACTION_CLOSE):
+                entities.append(for_season(GlobalActionTypeSelect(coordinator, global_device_id, action), season))
+            for shutter in coordinator.shutters.values():
+                for action in (ACTION_OPEN, ACTION_CLOSE):
+                    entities.append(for_season(ShutterSourceSelect(coordinator, shutter, action), season))
+                    entities.append(for_season(LocalActionTypeSelect(coordinator, shutter, action), season))
+                    for profile in PROFILES:
+                        entities.append(for_season(ProfileTimeSourceSelect(coordinator, shutter, action, profile), season))
+
     async_add_entities(entities)
 
 
@@ -167,6 +179,7 @@ class _RegisteredSelectBase(SelectEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        seed_seasonal_entity(self)
         last_state = await self.async_get_last_state()
         if last_state is not None:
             restored = _LEGACY_OPTIONS.get(last_state.state, last_state.state)

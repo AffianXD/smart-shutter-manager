@@ -49,7 +49,8 @@
           "notify_text_moved": "Vorlage: Bewegungsbenachrichtigung (Variablen: names, count, action, trigger)",
           "notify_text_frost": "Vorlage: Frostschutzbenachrichtigung (Variablen: names, count)",
           "notify_text_preclose": "Vorlage: Vorwarnung vor dem Schließen (Variablen: name, time, action)",
-          "notification_max_age_minutes": "Wie lange bleiben Vorwarnungsschaltflächen aktiv? (Minuten, 0 = unbegrenzt)"
+          "notification_max_age_minutes": "Wie lange bleiben Vorwarnungsschaltflächen aktiv? (Minuten, 0 = unbegrenzt)",
+          "seasonal_enabled": "Sommer- und Winterprofile nach Zeitumstellung"
         }
       },
       "custom_schedules_menu": {
@@ -261,6 +262,182 @@
           "global": "Global",
           "local": "Individuell"
         }
+      },
+      "open_source_summer": {
+        "name": "Öffnungsquelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_source_winter": {
+        "name": "Öffnungsquelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_source_summer": {
+        "name": "Schließquelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_source_winter": {
+        "name": "Schließquelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "global_open_type_summer": {
+        "name": "Global Öffnungsart (Sommerzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "global_open_type_winter": {
+        "name": "Global Öffnungsart (Winterzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "global_close_type_summer": {
+        "name": "Global Schließart (Sommerzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "global_close_type_winter": {
+        "name": "Global Schließart (Winterzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "local_open_type_summer": {
+        "name": "Öffnungsart (Sommerzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "local_open_type_winter": {
+        "name": "Öffnungsart (Winterzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "local_close_type_summer": {
+        "name": "Schließart (Sommerzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "local_close_type_winter": {
+        "name": "Schließart (Winterzeit)",
+        "state": {
+          "time": "Uhrzeit",
+          "sunrise": "Sonnenaufgang",
+          "sunset": "Sonnenuntergang"
+        }
+      },
+      "open_weekday_time_source_summer": {
+        "name": "Öffnen Arbeitstage Quelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_weekday_time_source_winter": {
+        "name": "Öffnen Arbeitstage Quelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_weekday_time_source_summer": {
+        "name": "Schließen Arbeitstage Quelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_weekday_time_source_winter": {
+        "name": "Schließen Arbeitstage Quelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_weekend_time_source_summer": {
+        "name": "Öffnen Wochenende Quelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_weekend_time_source_winter": {
+        "name": "Öffnen Wochenende Quelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_weekend_time_source_summer": {
+        "name": "Schließen Wochenende Quelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_weekend_time_source_winter": {
+        "name": "Schließen Wochenende Quelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_holiday_time_source_summer": {
+        "name": "Öffnen Ferien Quelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "open_holiday_time_source_winter": {
+        "name": "Öffnen Ferien Quelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_holiday_time_source_summer": {
+        "name": "Schließen Ferien Quelle (Sommerzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
+      },
+      "close_holiday_time_source_winter": {
+        "name": "Schließen Ferien Quelle (Winterzeit)",
+        "state": {
+          "global": "Global",
+          "local": "Individuell"
+        }
       }
     },
     "number": {
@@ -287,6 +464,30 @@
       },
       "local_close_position": {
         "name": "Schließen Zielposition"
+      },
+      "global_open_sun_offset_summer": {
+        "name": "Global Öffnen Sonnenversatz (Sommerzeit)"
+      },
+      "global_open_sun_offset_winter": {
+        "name": "Global Öffnen Sonnenversatz (Winterzeit)"
+      },
+      "global_close_sun_offset_summer": {
+        "name": "Global Schließen Sonnenversatz (Sommerzeit)"
+      },
+      "global_close_sun_offset_winter": {
+        "name": "Global Schließen Sonnenversatz (Winterzeit)"
+      },
+      "local_open_sun_offset_summer": {
+        "name": "Öffnen Sonnenversatz (Sommerzeit)"
+      },
+      "local_open_sun_offset_winter": {
+        "name": "Öffnen Sonnenversatz (Winterzeit)"
+      },
+      "local_close_sun_offset_summer": {
+        "name": "Schließen Sonnenversatz (Sommerzeit)"
+      },
+      "local_close_sun_offset_winter": {
+        "name": "Schließen Sonnenversatz (Winterzeit)"
       }
     },
     "time": {
@@ -331,19 +532,99 @@
       },
       "local_close_custom": {
         "name": "Schließen ({profile_name})"
+      },
+      "global_open_weekday_summer": {
+        "name": "Global Öffnen Arbeitstage (Sommerzeit)"
+      },
+      "global_open_weekday_winter": {
+        "name": "Global Öffnen Arbeitstage (Winterzeit)"
+      },
+      "global_open_weekend_summer": {
+        "name": "Global Öffnen Wochenende (Sommerzeit)"
+      },
+      "global_open_weekend_winter": {
+        "name": "Global Öffnen Wochenende (Winterzeit)"
+      },
+      "global_open_holiday_summer": {
+        "name": "Global Öffnen Ferien (Sommerzeit)"
+      },
+      "global_open_holiday_winter": {
+        "name": "Global Öffnen Ferien (Winterzeit)"
+      },
+      "global_close_weekday_summer": {
+        "name": "Global Schließen Arbeitstage (Sommerzeit)"
+      },
+      "global_close_weekday_winter": {
+        "name": "Global Schließen Arbeitstage (Winterzeit)"
+      },
+      "global_close_weekend_summer": {
+        "name": "Global Schließen Wochenende (Sommerzeit)"
+      },
+      "global_close_weekend_winter": {
+        "name": "Global Schließen Wochenende (Winterzeit)"
+      },
+      "global_close_holiday_summer": {
+        "name": "Global Schließen Ferien (Sommerzeit)"
+      },
+      "global_close_holiday_winter": {
+        "name": "Global Schließen Ferien (Winterzeit)"
+      },
+      "local_open_weekday_summer": {
+        "name": "Öffnen Arbeitstage (Sommerzeit)"
+      },
+      "local_open_weekday_winter": {
+        "name": "Öffnen Arbeitstage (Winterzeit)"
+      },
+      "local_open_weekend_summer": {
+        "name": "Öffnen Wochenende (Sommerzeit)"
+      },
+      "local_open_weekend_winter": {
+        "name": "Öffnen Wochenende (Winterzeit)"
+      },
+      "local_open_holiday_summer": {
+        "name": "Öffnen Ferien (Sommerzeit)"
+      },
+      "local_open_holiday_winter": {
+        "name": "Öffnen Ferien (Winterzeit)"
+      },
+      "local_close_weekday_summer": {
+        "name": "Schließen Arbeitstage (Sommerzeit)"
+      },
+      "local_close_weekday_winter": {
+        "name": "Schließen Arbeitstage (Winterzeit)"
+      },
+      "local_close_weekend_summer": {
+        "name": "Schließen Wochenende (Sommerzeit)"
+      },
+      "local_close_weekend_winter": {
+        "name": "Schließen Wochenende (Winterzeit)"
+      },
+      "local_close_holiday_summer": {
+        "name": "Schließen Ferien (Sommerzeit)"
+      },
+      "local_close_holiday_winter": {
+        "name": "Schließen Ferien (Winterzeit)"
       }
     },
     "sensor": {
       "active_profile": {
         "name": "Aktives Profil",
-        "state": {"weekday": "Arbeitstag", "weekend": "Wochenende", "holiday": "Ferien"}
+        "state": {
+          "weekday": "Arbeitstag",
+          "weekend": "Wochenende",
+          "holiday": "Ferien"
+        }
       },
       "next_action": {
         "name": "Nächste Aktion"
       },
       "global_active_profile": {
         "name": "Global Aktives Profil",
-        "state": {"weekday": "Arbeitstag", "weekend": "Wochenende", "holiday": "Ferien"}
+        "state": {
+          "weekday": "Arbeitstag",
+          "weekend": "Wochenende",
+          "holiday": "Ferien"
+        }
       },
       "global_next_action": {
         "name": "Global Nächste Aktion"
@@ -433,8 +714,11 @@
   "selector": {
     "schedule_action": {
       "options": {
-        "edit": "Bearbeiten", "move_up": "↑ Höhere Priorität", "move_down": "↓ Niedrigere Priorität",
-        "delete": "Löschen", "back": "« Zurück zur Liste"
+        "edit": "Bearbeiten",
+        "move_up": "↑ Höhere Priorität",
+        "move_down": "↓ Niedrigere Priorität",
+        "delete": "Löschen",
+        "back": "« Zurück zur Liste"
       }
     },
     "schedule_priority": {
@@ -443,11 +727,21 @@
         "existing_wins": "Bestehende Regeln gewinnen an Überschneidungstagen"
       }
     },
-    "trigger_action": { "options": { "open": "Öffnen", "close": "Schließen" } },
+    "trigger_action": {
+      "options": {
+        "open": "Öffnen",
+        "close": "Schließen"
+      }
+    },
     "custom_weekday": {
       "options": {
-        "mon": "Montag", "tue": "Dienstag", "wed": "Mittwoch", "thu": "Donnerstag",
-        "fri": "Freitag", "sat": "Samstag", "sun": "Sonntag"
+        "mon": "Montag",
+        "tue": "Dienstag",
+        "wed": "Mittwoch",
+        "thu": "Donnerstag",
+        "fri": "Freitag",
+        "sat": "Samstag",
+        "sun": "Sonntag"
       }
     },
     "weekday": {
