@@ -47,6 +47,15 @@ make dev-logs AGENT=codex-1
 make dev-down AGENT=codex-1
 ```
 
+After a successful `make test-sync`, stop that worktree's Dev instance with
+`make dev-down AGENT=codex-1`; the stable Test instance is used for the Test UI
+check. `dev-down` preserves its files so review feedback can be addressed later.
+When human review is resolved and the feature is complete, remove that one Dev
+instance with `make dev-clean AGENT=codex-1 CONFIRM=yes`. This routine end-of-
+feature cleanup is authorized; do not clean while review or follow-up work is
+pending, and do not use `--all` for routine cleanup. Reset remains separately
+confirmation-gated.
+
 Equivalent scripts are executable directly: `./scripts/dev-up.sh codex-1`.
 Identifiers contain 1–48 lowercase letters, digits, `_` or `-` and start with a
 letter/digit. Missing/invalid names fail without starting Docker resources.
