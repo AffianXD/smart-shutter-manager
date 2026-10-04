@@ -41,6 +41,8 @@ from homeassistant.helpers.event import (
 )
 import homeassistant.util.dt as dt_util
 
+from .seasons import seasonal_enabled, season_at
+
 from .const import (
     ACTION_CLOSE,
     ACTION_OPEN,
@@ -355,8 +357,8 @@ class ShutterActionExecutor:
         self._target_dt[action] = next_dt
 
         pre_lead = self._coordinator.pre_notify_lead
-        if action == ACTION_CLOSE and pre_lead > timedelta(0) and (next_dt - now) > pre_lead:
-            pre_time = next_dt - pre_lead
+        if action == ACTION_CLOSE and pre_lead > timedelta(0) and (dt_util.as_utc(next_dt) - dt_util.as_utc(now)) > pre_lead:
+            pre_time = dt_util.as_utc(next_dt) - pre_lead
             self._unsub_prenotify[action] = async_track_point_in_time(
                 self.hass, self._make_prenotify_callback(action), pre_time
             )
@@ -719,7 +721,7 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
             override = self._coordinator.get_action_override(
                 self._shutter.entity_id, action
             )
-            if override is not None and override > now:
+            if override is not None and dt_util.as_utc(override) > dt_util.as_utc(now):
                 # User has already explicitly moved/skipped
                 # (Override now survives a HA restart, see
                 # storage.ActionOverrideStore) - the regular arm()-planning
@@ -730,10 +732,10 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
             todays_target = resolve_todays_datetime(
                 self.hass, self._coordinator, self._shutter, action, profile, now
             )
-            if todays_target is None or todays_target > now:
+            if todays_target is None or dt_util.as_utc(todays_target) > dt_util.as_utc(now):
                 continue  # not yet due - normal arm takes over
 
-            if now - todays_target > catch_up_window:
+            if dt_util.as_utc(now) - dt_util.as_utc(todays_target) > catch_up_window:
                 continue  # too long ago, no longer meaningful to catch up
 
             already_done = self._last_executed_store.get(self._shutter.entity_id, action)
@@ -775,6 +777,8 @@ class SchedulerManager:
         self.manual_intervention_guard: ManualInterventionGuard | None = None
         self._unsub_signal: callable | None = None
         self._unsub_midnight: callable | None = None
+        self._unsub_season: callable | None = None
+        self._season_state = None
         self._unsub_holiday: callable | None = None
         self._unsub_notification_action: callable | None = None
 
@@ -827,6 +831,12 @@ class SchedulerManager:
             self.hass, self._rearm_all, hour=0, minute=0, second=10
         )
 
+        if seasonal_enabled(self._coordinator):
+            self._season_state = (str(dt_util.now().tzinfo), season_at(dt_util.now()))
+            self._unsub_season = async_track_time_change(
+                self.hass, self._check_season, second=10
+            )
+
         holiday_entity_id = self._coordinator.holiday_entity_id
         if holiday_entity_id:
             self._unsub_holiday = async_track_state_change_event(
@@ -850,6 +860,15 @@ class SchedulerManager:
                 )
 
         self._rearm_all()
+
+    @callback
+    def _check_season(self, now: datetime) -> None:
+        local_now = dt_util.as_local(now)
+        state = (str(local_now.tzinfo), season_at(local_now))
+        if state != self._season_state:
+            self._season_state = state
+            # No restart catch-up: only recompute future actions and previews.
+            async_dispatcher_send(self.hass, f"{SIGNAL_RECOMPUTE}_{self._coordinator.entry.entry_id}")
 
     @callback
     def _rearm_all(self, *_args, **_kwargs) -> None:
@@ -934,6 +953,7 @@ class SchedulerManager:
         for unsub_attr in (
             "_unsub_signal",
             "_unsub_midnight",
+            "_unsub_season",
             "_unsub_holiday",
             "_unsub_notification_action",
         ):

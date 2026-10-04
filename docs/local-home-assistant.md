@@ -20,12 +20,16 @@ make test-down
 There is one stable project `ha-test`, normally at **http://localhost:8123**.
 All linked worktrees share its runtime in the primary checkout's `.runtime/test/`.
 Starting an existing Test does not replace its source snapshot. An occupied port
-or a foreign project causes an error; no existing container is stopped.
+or a foreign project causes an error; no existing container is stopped. Mutating
+Test commands from different worktrees are serialized; a command waits for its
+turn if another Test operation is active. Read-only status and log commands stay
+available. An active human review still prevents replacing or restarting its stand.
 
 Copy `.env.example` to `.env` to change defaults. `HA_VERSION` is an explicit
 release (initially `2026.9.4`, matching the repository CI); `TZ`, `TEST_PORT`,
-and `HA_WAIT_TIMEOUT` are supported. Environment variables override the file.
-An existing Test keeps its rendered image/port settings until `test-sync`.
+and `HA_WAIT_TIMEOUT` are supported. Environment variables override these
+non-secret settings. An existing Test keeps its rendered image/port settings
+until `test-sync`.
 Bare Git repositories are unsupported; ordinary checkouts and linked worktrees work.
 HTTP settings are managed under **Settings → System → Network**. The source
 configuration intentionally has no `http:` YAML block; migrated HTTP settings
@@ -42,6 +46,15 @@ make dev-status AGENT=codex-1
 make dev-logs AGENT=codex-1
 make dev-down AGENT=codex-1
 ```
+
+After a successful `make test-sync`, stop that worktree's Dev instance with
+`make dev-down AGENT=codex-1`; the stable Test instance is used for the Test UI
+check. `dev-down` preserves its files so review feedback can be addressed later.
+When human review is resolved and the feature is complete, remove that one Dev
+instance with `make dev-clean AGENT=codex-1 CONFIRM=yes`. This routine end-of-
+feature cleanup is authorized; do not clean while review or follow-up work is
+pending, and do not use `--all` for routine cleanup. Reset remains separately
+confirmation-gated.
 
 Equivalent scripts are executable directly: `./scripts/dev-up.sh codex-1`.
 Identifiers contain 1–48 lowercase letters, digits, `_` or `-` and start with a
@@ -86,10 +99,19 @@ Gamma is available for add/remove tests. Open, close, position and stop animate
 only local in-memory state; no fixture reaches hardware. Schedules start disabled.
 Bootstrap does not overwrite an existing user's choices on subsequent starts.
 
-Per-instance `credentials.json` contains the local username/password and refresh
-token, with file mode `0600` inside a restricted Runtime directory. Read that file
-locally for a manual browser login; do not paste credentials into chat or logs.
-The browser-check script handles authentication without printing credentials.
+All Dev instances and linked worktrees use the same local username, `developer`,
+and password. On the first `make dev-up`, a strong password is generated once and
+saved as `HA_DEV_PASSWORD` in the primary checkout's ignored `.env` with mode
+`0600`. You can copy `.env.example` first, or let `dev-up` create the local file.
+Keep `.env` local and do not paste its contents into chat or logs. When a Dev
+instance next starts, its existing Home Assistant account is updated to the
+shared password through Home Assistant's own auth tool; its config, virtual
+shutters and other runtime state remain intact. Test keeps its separate login.
+
+Each instance still has a restricted `.runtime/dev/<agent>/credentials.json`
+with its own refresh/access tokens and a local copy of the shared login for
+onboarding and browser checks. Do not paste that file into chat or logs. The
+browser-check script handles authentication without printing credentials.
 The old `xenodochial_pike` URL/token are not used by these environments.
 
 Bridge networking intentionally limits multicast discovery. Avoid adding real
@@ -109,7 +131,8 @@ make dev-clean AGENT=codex-1 CONFIRM=yes
 `down` retains state; `clean` removes this instance's Compose resources and runtime;
 reset does clean followed by initialization from current sources. No Test cleanup
 or reset exists. No global Docker/volume prune is used. Locks serialize mutations
-and labels prevent adopting foreign projects. Symlinked runtime paths are refused.
+against the shared Test and labels prevent adopting foreign projects. Symlinked
+runtime paths are refused.
 Disk/mount permission failures retain state and produce a nonzero exit code.
 
 ## Checks and UI approval

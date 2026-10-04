@@ -16,9 +16,12 @@ agent name such as `codex-1`. The manager derives paths and validates ownership.
 - Dev mounts this worktree's Smart Shutter and virtual fixtures read-only. After
   Python/YAML edits, run `make dev-restart AGENT=codex-1`; verify frontend delivery
   and reload the browser after JS edits. State belongs to this instance alone.
+- Dev instances share the `developer` login from the primary checkout's ignored
+  `.env` (`HA_DEV_PASSWORD`). First `dev-up` generates it if empty. Existing Dev
+  accounts are aligned on their next start; each instance still has its own token.
 - Load `.runtime/dev/<agent>/credentials.json` only through local tools/in-memory
-  browser setup. Never print its contents, persist browser auth traces or reuse
-  the old installation's token. Each instance has its own refresh token.
+  browser setup. Never print its contents or the `.env` password, persist browser
+  auth traces or reuse the old installation's token.
 - Run relevant existing Python and card tests. For baseline real-HA UI checks,
   run `node scripts/ha_ui_check.cjs dev codex-1`; then inspect actual changed
   interactions, including desktop and mobile views. Baseline is read-only.
@@ -34,15 +37,28 @@ agent name such as `codex-1`. The manager derives paths and validates ownership.
 Follow repository `AGENTS.md`: own checks, second agent review of current
 diff/evidence/affected UI flows, resolve findings, then `make test-sync` and Test
 UI verification. Run `make test-review` to reserve the stand for human inspection.
+Mutating Test commands queue across linked worktrees; read-only status/logs remain
+available while another command holds the shared Test lock. A pending human review
+still blocks Test replacement/restart until explicitly resolved.
 Provide the Test URL, source hash and quick review steps. Await explicit user UI
 approval before an authorized commit. Changes invalidate approval. Never clear
 another pending review automatically. `test-review-clear CONFIRM=yes` releases
 the reservation only after the user has resolved it; it is not an approval.
 
+After a successful `make test-sync`, stop this worktree's Dev instance with
+`make dev-down AGENT=<agent>`; Test UI verification can continue against the stable
+Test instance. Keep Dev runtime data while human review is pending so requested
+follow-up work can resume from it. Once review is resolved and the feature is
+complete with no follow-up pending, remove only this worktree's Dev instance using
+`make dev-clean AGENT=<agent> CONFIRM=yes`. The user authorized this routine
+end-of-feature cleanup. Do not clean other agents' instances or use `--all` for
+routine cleanup. Reset remains confirmation-gated.
+
 ## Lifecycle boundaries
 
 `dev-down` preserves data. `dev-clean` deletes only the named Dev instance;
-`dev-reset` rebuilds it from current sources. Use `CONFIRM=yes` only when the
-specific deletion/reset is authorized. `dev-clean --all` is confined to this
+`dev-reset` rebuilds it from current sources. The feature-close cleanup above is
+authorized for the current worktree's named instance; reset and any broader cleanup
+still require explicit confirmation. `dev-clean --all` is confined to this
 worktree. Test has no cleanup/reset command. Do not use global Docker prune,
 volume deletion, host networking or production endpoints to fix a failed start.

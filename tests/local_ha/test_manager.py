@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -41,6 +42,87 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(a.path, b.path)
         self.assertEqual(a.project, "ha-test")
         self.assertEqual(a.identity(), b.identity())
+
+    def test_dev_login_is_shared_across_worktrees_and_separate_from_test(self):
+        first, second = self.env(agent="codex-a"), self.env(root=self.other, agent="codex-b")
+        first_login = first.shared_dev_credentials()
+        second_login = second.shared_dev_credentials()
+
+        self.assertEqual(first_login["username"], "developer")
+        self.assertTrue(first_login["password"] == second_login["password"])
+        self.assertEqual(first.primary / ".env", second.primary / ".env")
+        self.assertEqual((self.root / ".env").stat().st_mode & 0o777, 0o600)
+
+        test = self.env("test")
+        self.init(test)
+        test_login = test.credentials()
+        self.assertEqual(test_login["username"], "developer")
+        self.assertFalse(test_login["password"] == first_login["password"])
+
+    def test_dev_login_migration_preserves_instance_tokens(self):
+        env = self.env()
+        self.init(env)
+        auth_store = env.config / ".storage/auth"
+        auth_store.parent.mkdir()
+        auth_store.write_text("managed auth data")
+        credentials = {"username": "developer", "password": "old-password",
+                       "client_id": "http://localhost/", "refresh_token": "instance-refresh",
+                       "access_token": "instance-access"}
+        ha.write_json(env.path / "credentials.json", credentials)
+
+        with patch.object(env, "running", return_value=False), patch.object(env, "compose") as compose:
+            env.sync_dev_login()
+
+        self.assertEqual(compose.call_args.args[:3], ("run", "--rm", "--no-deps"))
+        self.assertTrue(compose.call_args.kwargs["capture"])
+        migration_input = json.loads(compose.call_args.kwargs["input_data"])
+        migrated = ha.read_json(env.path / "credentials.json")
+        self.assertEqual(migration_input["old_password"], "old-password")
+        first_password = ha.dotenv_values(self.root / ".env")["HA_DEV_PASSWORD"]
+        self.assertTrue(migration_input["password"] == first_password)
+        self.assertTrue(migrated["password"] == first_password)
+        self.assertEqual(migrated["refresh_token"], "instance-refresh")
+        self.assertEqual(migrated["access_token"], "instance-access")
+
+    def test_dev_login_migration_failure_restores_running_container_and_credentials(self):
+        env = self.env()
+        self.init(env)
+        auth_store = env.config / ".storage/auth"
+        auth_store.parent.mkdir()
+        auth_store.write_text("managed auth data")
+        original = {"username": "developer", "password": "old-password",
+                    "client_id": "http://localhost/", "refresh_token": "instance-refresh"}
+        ha.write_json(env.path / "credentials.json", original)
+
+        def compose(*args, **kwargs):
+            if args and args[0] == "run":
+                raise ha.LocalError("synthetic auth CLI failure")
+            return subprocess.CompletedProcess(args, 0, "")
+
+        with patch.object(env, "running", return_value=True), patch.object(env, "compose", side_effect=compose) as run_compose:
+            with self.assertRaisesRegex(ha.LocalError, "Could not safely align"):
+                env.sync_dev_login()
+
+        self.assertEqual(run_compose.call_args_list[0].args, ("stop",))
+        self.assertEqual(run_compose.call_args_list[-1].args, ("up", "-d"))
+        self.assertEqual(ha.read_json(env.path / "credentials.json"), original)
+
+    def test_dev_login_with_incomplete_credentials_fails_before_stopping(self):
+        env = self.env()
+        self.init(env)
+        auth_store = env.config / ".storage/auth"
+        auth_store.parent.mkdir()
+        auth_store.write_text("managed auth data")
+        ha.write_json(env.path / "credentials.json", {
+            "username": "developer", "client_id": "http://localhost/",
+            "refresh_token": "instance-refresh",
+        })
+
+        with patch.object(env, "running", return_value=True), patch.object(env, "compose") as compose:
+            with self.assertRaisesRegex(ha.LocalError, "cannot be matched"):
+                env.sync_dev_login()
+
+        compose.assert_not_called()
 
     def test_invalid_names_fail_before_runtime(self):
         for name in (None, "", "../test", "UPPER", "a;b", "$(touch x)", "a b", "-all", "a" * 49):
@@ -212,6 +294,36 @@ class EnvironmentTests(unittest.TestCase):
         with first.lock(), self.assertRaises(ha.LocalError):
             with second.lock():
                 pass
+
+    def test_shared_test_mutations_wait_for_the_active_worktree(self):
+        first, second = self.env("test"), self.env("test", root=self.other)
+        first_active = threading.Event()
+        release_first = threading.Event()
+        second_active = threading.Event()
+
+        def hold_first():
+            with first.lock():
+                first_active.set()
+                release_first.wait(2)
+
+        def wait_second():
+            with second.lock():
+                second_active.set()
+
+        first_thread = threading.Thread(target=hold_first)
+        second_thread = threading.Thread(target=wait_second)
+        first_thread.start()
+        self.assertTrue(first_active.wait(2))
+        second_thread.start()
+        try:
+            self.assertFalse(second_active.wait(0.1))
+        finally:
+            release_first.set()
+        self.assertTrue(second_active.wait(2))
+        first_thread.join(2)
+        second_thread.join(2)
+        self.assertFalse(first_thread.is_alive())
+        self.assertFalse(second_thread.is_alive())
 
     def test_completed_onboarding_after_restart_uses_existing_auth(self):
         env = self.env("test")

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased: seasonal time profiles
+
+- Add optional summer/winter schedules selected by daylight saving time in
+  Home Assistant's timezone, globally and per shutter.
+- Keep weekday/weekend/holiday times within each season, with separate trigger
+  types, sun offsets, and global/individual sources. Preserve custom-profile
+  priority and manual overrides.
+- Copy existing settings on first activation and retain native entity IDs and
+  seasonal edits across restarts and reactivation.
+- Add independent season editors and an active-season indicator in the card.
+  Resolve forecasts and execution across clock changes using absolute times;
+  use calendar-day buckets in timelines.
+- Cover native restoration, DST gaps/folds, individual inheritance, disabled
+  behavior, and card interactions with simulated covers.
+
 ## Unreleased: v0.22.0
 
 - Add admin-only "Manage shutters" to the Smart Shutter settings menu and

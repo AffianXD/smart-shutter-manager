@@ -15,6 +15,9 @@ instance or the existing `xenodochial_pike` installation. Only verified virtual
 3. Promote the reviewed stand with `make test-sync`, recheck it in the stable Test
    UI, then mark it with `make test-review`. If a human review is already pending,
    do not clear or overwrite it without explicit user direction.
+   After a successful `test-sync`, stop only this worktree's Dev instance with
+   `make dev-down AGENT=<agent>`; keep its runtime while Test is under human
+   review in case follow-up changes are requested.
 4. Give the user the Test URL, a short change list and quick review steps. Wait
    for their explicit UI approval before an authorized commit. Approval applies
    only to the reviewed diff and source hash. Further UI changes or a different
@@ -23,4 +26,8 @@ instance or the existing `xenodochial_pike` installation. Only verified virtual
 
 Do not stage, commit or push without authorization. Do not put credentials in Git,
 logs, screenshots, traces or messages. Do not claim unperformed browser/device
-checks passed. Cleanup/reset are Dev-only and require explicit confirmation.
+checks passed. Cleanup/reset are Dev-only. At feature completion, after review is
+resolved and no follow-up work is pending, clean only this worktree's Dev instance
+with `make dev-clean AGENT=<agent> CONFIRM=yes`; this lifecycle cleanup is
+authorized. Reset still requires explicit confirmation. Never clean another
+agent's instance or use `--all` as routine feature cleanup.

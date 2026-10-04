@@ -34,6 +34,7 @@ from .const import (
     global_automation_registry_key,
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
+from .seasons import SEASONS, local_wall_time, season_at, seasonal_enabled, seasonal_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class ShutterSchedule:
         candidates = [(a, t) for a, t in candidates if t is not None]
         if not candidates:
             return None
-        return min(candidates, key=lambda item: item[1])
+        return min(candidates, key=lambda item: dt_util.as_utc(item[1]))
 
 
 def is_holiday_active(hass: HomeAssistant, holiday_entity_id: str | None) -> bool:
@@ -187,24 +188,25 @@ that belong to this area - they are completely ignored (not visible or effective
 
 
 def _use_local_source(
-    coordinator: SmartShutterCoordinator, shutter: ManagedShutter, action: str
+    coordinator: SmartShutterCoordinator, shutter: ManagedShutter, action: str, season: str | None = None
 ) -> bool:
     """Checks the open_source/close_source selection (Global/Local) - now controls the same action's type, time, and daylight saving uniformly (see requirements document section 10, extended on user request to trigger type + offset)."""
     shutter_entities = coordinator.shutter_entities.get(shutter.entity_id, {})
-    source_entity = shutter_entities.get(f"{action}_source")
+    source_entity = _season_entity(shutter_entities, f"{action}_source", season)
     return bool(source_entity) and source_entity.source == SOURCE_LOCAL
 
 
 def get_action_type(
-    coordinator: SmartShutterCoordinator, shutter: ManagedShutter, action: str
+    coordinator: SmartShutterCoordinator, shutter: ManagedShutter, action: str, season: str | None = None
 ) -> str:
     """Reads the trigger type (time/sunrise/sunset) - global or local, depending on open_source/close_source."""
-    use_local = _use_local_source(coordinator, shutter, action)
+    season = _current_season(coordinator) if season is None else season
+    use_local = _use_local_source(coordinator, shutter, action, season)
     if use_local:
         shutter_entities = coordinator.shutter_entities.get(shutter.entity_id, {})
-        type_entity = shutter_entities.get(f"{action}_type")
+        type_entity = _season_entity(shutter_entities, f"{action}_type", season)
     else:
-        type_entity = coordinator.global_entities.get(f"{action}_type")
+        type_entity = _season_entity(coordinator.global_entities, f"{action}_type", season)
 
     if type_entity is None:
         return TYPE_TIME
@@ -212,15 +214,16 @@ def get_action_type(
 
 
 def get_sun_offset(
-    coordinator: SmartShutterCoordinator, shutter: ManagedShutter, action: str
+    coordinator: SmartShutterCoordinator, shutter: ManagedShutter, action: str, season: str | None = None
 ) -> timedelta:
     """Reads the configured solar offset in minutes (section 11) - global or local, depending on open_source/close_source."""
-    use_local = _use_local_source(coordinator, shutter, action)
+    season = _current_season(coordinator) if season is None else season
+    use_local = _use_local_source(coordinator, shutter, action, season)
     if use_local:
         shutter_entities = coordinator.shutter_entities.get(shutter.entity_id, {})
-        offset_entity = shutter_entities.get(f"{action}_sun_offset")
+        offset_entity = _season_entity(shutter_entities, f"{action}_sun_offset", season)
     else:
-        offset_entity = coordinator.global_entities.get(f"{action}_sun_offset")
+        offset_entity = _season_entity(coordinator.global_entities, f"{action}_sun_offset", season)
 
     minutes = offset_entity.native_value if offset_entity is not None else 0
     return timedelta(minutes=minutes or 0)
@@ -231,13 +234,14 @@ def _use_local_time_source(
     shutter: ManagedShutter,
     action: str,
     profile: str,
+    season: str | None = None,
 ) -> bool:
     """Granular ALS _use_local_source: controls ONLY whether the target time for
     this single profile (weekday/weekend/holiday/Custom-XYZ) comes from local or
     global - independent of trigger type (time/sun), which is still uniformly controlled via open_source/close_source. Default without
     selection: Global (existing behavior remains unchanged)."""
     shutter_entities = coordinator.shutter_entities.get(shutter.entity_id, {})
-    source_entity = shutter_entities.get(f"{action}_{profile}_time_source")
+    source_entity = _season_entity(shutter_entities, f"{action}_{profile}_time_source", None if is_custom_profile(profile) else season)
     return bool(source_entity) and source_entity.source == SOURCE_LOCAL
 
 
@@ -246,15 +250,17 @@ def resolve_fixed_time(
     shutter: ManagedShutter,
     action: str,
     profile: str,
+    season: str | None = None,
 ) -> time | None:
     """Reads the target time valid for action+profile (global or local), only relevant if the trigger type is 'time'.
 
 For custom profiles, the global value does NOT come from a dedicated time entity, but directly from the rule definition (open_time/close_time), since custom profiles are created once in the options and do not require an additional global entity."""
-    use_local = _use_local_time_source(coordinator, shutter, action, profile)
+    season = None if is_custom_profile(profile) else (season or _current_season(coordinator))
+    use_local = _use_local_time_source(coordinator, shutter, action, profile, season)
 
     if use_local:
         shutter_entities = coordinator.shutter_entities.get(shutter.entity_id, {})
-        time_entity = shutter_entities.get(f"{action}_{profile}")
+        time_entity = _season_entity(shutter_entities, f"{action}_{profile}", season)
         if time_entity is not None and time_entity.native_value is not None:
             return time_entity.native_value
         # "Individual" selected, but never had a custom value
@@ -288,11 +294,73 @@ For custom profiles, the global value does NOT come from a dedicated time entity
             )
             return None
 
-    time_entity = coordinator.global_entities.get(f"{action}_{profile}")
+    time_entity = _season_entity(coordinator.global_entities, f"{action}_{profile}", season)
     return time_entity.native_value if time_entity is not None else None
 
 
 _MAX_LOOKAHEAD_DAYS = 35  # spacious horizon, also for rare custom profiles
+
+
+def _season_entity(entities: dict, key: str, season: str | None):
+    # Base fallback also covers entity setup/reload before seasonal registration.
+    return entities.get(seasonal_key(key, season)) or entities.get(key)
+
+
+def _current_season(coordinator) -> str | None:
+    return season_at(dt_util.now()) if seasonal_enabled(coordinator) else None
+
+
+def _global_fixed_time(coordinator, action, profile, season):
+    if is_custom_profile(profile):
+        rule = coordinator.get_custom_schedule(profile)
+        raw = rule.get(f"{action}_time") if rule else None
+        try:
+            return time.fromisoformat(raw) if raw else None
+        except ValueError:
+            return None
+    entity = _season_entity(coordinator.global_entities, f"{action}_{profile}", season)
+    return entity.native_value if entity else None
+
+
+def _resolve_day(hass, coordinator, shutter, action, profile, day, tzinfo):
+    """One action per local day, resolved with the season at its actual instant."""
+    custom = is_custom_profile(profile)
+    seasons = SEASONS if seasonal_enabled(coordinator) and not custom else (None,)
+    candidates = []
+    for season in seasons:
+        if shutter is None:
+            type_entity = _season_entity(coordinator.global_entities, f"{action}_type", season)
+            action_type = type_entity.action_type if type_entity else TYPE_TIME
+            offset_entity = _season_entity(coordinator.global_entities, f"{action}_sun_offset", season)
+            offset = timedelta(minutes=(offset_entity.native_value or 0) if offset_entity else 0)
+            clock = _global_fixed_time(coordinator, action, profile, season)
+        else:
+            action_type = get_action_type(coordinator, shutter, action, season)
+            offset = get_sun_offset(coordinator, shutter, action, season)
+            clock = resolve_fixed_time(coordinator, shutter, action, profile, season)
+
+        if not custom and action_type in (TYPE_SUNRISE, TYPE_SUNSET):
+            event = "sunrise" if action_type == TYPE_SUNRISE else "sunset"
+            midnight = local_wall_time(day, time.min, tzinfo)
+            result = get_astral_event_next(hass, event, utc_point_in_time=dt_util.as_utc(midnight), offset=offset)
+            moments = [result.astimezone(tzinfo)] if result else []
+        elif clock is not None:
+            moments = [local_wall_time(day, clock, tzinfo)]
+        else:
+            moments = []
+        candidates.extend(moment for moment in moments if season is None or season_at(moment) == season)
+    return min(candidates, key=dt_util.as_utc) if candidates else None
+
+
+def _resolve_next(hass, coordinator, shutter, action, profile, now):
+    area_ids = coordinator.shutter_areas.get(shutter.entity_id, []) if shutter else None
+    for day_offset in range(_MAX_LOOKAHEAD_DAYS):
+        day = now.date() + timedelta(days=day_offset)
+        day_profile = profile if day_offset == 0 else determine_active_profile(hass, coordinator, day, area_ids)
+        candidate = _resolve_day(hass, coordinator, shutter, action, day_profile, day, now.tzinfo)
+        if candidate is not None and dt_util.as_utc(candidate) > dt_util.as_utc(now):
+            return candidate
+    return None
 
 
 def resolve_next_datetime(
@@ -303,71 +371,11 @@ def resolve_next_datetime(
     profile: str,
     now: datetime,
 ) -> datetime | None:
-    """Calculates the next execution time for an action,
-    regardless of whether it is time-based or sun-based - used by sensor.py AND
-    executor.py, so that both calculate exactly the same.
-
-    Important: iterates day by day (instead of just looking at "today" and
-    blindly adding +1 day if needed), because the active profile can change
-    from day to day (workday/weekend switch, holiday start/end, or a custom
-    profile that only applies on certain weekdays). Without this, e.g.
-    a custom profile that only applies on Thursdays would incorrectly
-    continue using Thursday times on a Friday, instead of correctly falling
-    back to holidays/weekend/workday."""
-    # Active shift/skip override (from the warning,
-    # see executor.py) takes precedence - and "expires" automatically once
-    # its time has passed (no manual cleanup needed)
+    """Next local/global action, with manual overrides taking precedence."""
     override = coordinator.get_action_override(shutter.entity_id, action)
-    if override is not None and override > now:
+    if override is not None and dt_util.as_utc(override) > dt_util.as_utc(now):
         return override
-
-    area_ids = coordinator.shutter_areas.get(shutter.entity_id, [])
-
-    # The TRIGGER TYPE (time/sunrise/sunset) is not
-    # profile-dependent and does not change from day to day - only once
-    # determine. Exception: on days with an active custom profile, ALWAYS
-    # uses a fixed time, regardless of the trigger type (see
-    # const.py - Custom profiles intentionally do not support solar position).
-    action_type = get_action_type(coordinator, shutter, action)
-    offset: timedelta | None = None
-
-    for day_offset in range(_MAX_LOOKAHEAD_DAYS):
-        candidate_date = (now + timedelta(days=day_offset)).date()
-        # For "today", the passed 'profile' is already correct
-        # (saves a recalculation); for all following days, this
-        # active profile is determined again.
-        day_profile = (
-            profile
-            if day_offset == 0
-            else determine_active_profile(hass, coordinator, candidate_date, area_ids)
-        )
-
-        if is_custom_profile(day_profile):
-            target_time = resolve_fixed_time(coordinator, shutter, action, day_profile)
-            if target_time is None:
-                continue  # This rule does not cover this action -> next day
-            candidate_dt = datetime.combine(candidate_date, target_time, tzinfo=now.tzinfo)
-        elif action_type in (TYPE_SUNRISE, TYPE_SUNSET):
-            event = "sunrise" if action_type == TYPE_SUNRISE else "sunset"
-            if offset is None:
-                offset = get_sun_offset(coordinator, shutter, action)
-            midnight = datetime.combine(candidate_date, time.min, tzinfo=now.tzinfo)
-            result = get_astral_event_next(
-                hass, event, utc_point_in_time=dt_util.as_utc(midnight), offset=offset
-            )
-            if result is None:
-                continue
-            candidate_dt = dt_util.as_local(result)
-        else:
-            target_time = resolve_fixed_time(coordinator, shutter, action, day_profile)
-            if target_time is None:
-                continue
-            candidate_dt = datetime.combine(candidate_date, target_time, tzinfo=now.tzinfo)
-
-        if candidate_dt > now:
-            return candidate_dt
-
-    return None
+    return _resolve_next(hass, coordinator, shutter, action, profile, now)
 
 
 def resolve_next_datetime_global(
@@ -377,54 +385,8 @@ def resolve_next_datetime_global(
     profile: str,
     now: datetime,
 ) -> datetime | None:
-    """Like resolve_next_datetime, but exclusively calculated from global Entities - independent of whether individual shutters override locally. For global preview display (Dashboard). Uses the same day-by-day logic as resolve_next_datetime (see there for the reasoning)."""
-    type_entity = coordinator.global_entities.get(f"{action}_type")
-    action_type = type_entity.action_type if type_entity is not None else TYPE_TIME
-    offset_entity = coordinator.global_entities.get(f"{action}_sun_offset")
-    offset_minutes = offset_entity.native_value if offset_entity is not None else 0
-    offset = timedelta(minutes=offset_minutes or 0)
-
-    for day_offset in range(_MAX_LOOKAHEAD_DAYS):
-        candidate_date = (now + timedelta(days=day_offset)).date()
-        day_profile = (
-            profile
-            if day_offset == 0
-            else determine_active_profile(hass, coordinator, candidate_date)
-        )
-
-        if is_custom_profile(day_profile):
-            rule = coordinator.get_custom_schedule(day_profile)
-            target_time = None
-            if rule is not None:
-                raw = rule.get(f"{action}_time")
-                if raw:
-                    try:
-                        target_time = time.fromisoformat(raw)
-                    except ValueError:
-                        target_time = None
-            if target_time is None:
-                continue
-            candidate_dt = datetime.combine(candidate_date, target_time, tzinfo=now.tzinfo)
-        elif action_type in (TYPE_SUNRISE, TYPE_SUNSET):
-            event = "sunrise" if action_type == TYPE_SUNRISE else "sunset"
-            midnight = datetime.combine(candidate_date, time.min, tzinfo=now.tzinfo)
-            result = get_astral_event_next(
-                hass, event, utc_point_in_time=dt_util.as_utc(midnight), offset=offset
-            )
-            if result is None:
-                continue
-            candidate_dt = dt_util.as_local(result)
-        else:
-            time_entity = coordinator.global_entities.get(f"{action}_{day_profile}")
-            target_time = time_entity.native_value if time_entity is not None else None
-            if target_time is None:
-                continue
-            candidate_dt = datetime.combine(candidate_date, target_time, tzinfo=now.tzinfo)
-
-        if candidate_dt > now:
-            return candidate_dt
-
-    return None
+    """Global preview shares the same date and season resolution as execution."""
+    return _resolve_next(hass, coordinator, None, action, profile, now)
 
 
 def resolve_todays_datetime(
@@ -435,28 +397,8 @@ def resolve_todays_datetime(
     profile: str,
     now: datetime,
 ) -> datetime | None:
-    """Like resolve_next_datetime, but WITHOUT rollover to tomorrow - provides the time calculated for TODAY, even if it is in the past. Only used for catch-up check after HA restart (executor.py), not for display/regular arm."""
-    if is_custom_profile(profile):
-        target_time = resolve_fixed_time(coordinator, shutter, action, profile)
-        if target_time is None:
-            return None
-        return datetime.combine(now.date(), target_time, tzinfo=now.tzinfo)
-
-    action_type = get_action_type(coordinator, shutter, action)
-
-    if action_type in (TYPE_SUNRISE, TYPE_SUNSET):
-        event = "sunrise" if action_type == TYPE_SUNRISE else "sunset"
-        offset = get_sun_offset(coordinator, shutter, action)
-        midnight_today = datetime.combine(now.date(), time.min, tzinfo=now.tzinfo)
-        result = get_astral_event_next(
-            hass, event, utc_point_in_time=dt_util.as_utc(midnight_today), offset=offset
-        )
-        return dt_util.as_local(result) if result else None
-
-    target_time = resolve_fixed_time(coordinator, shutter, action, profile)
-    if target_time is None:
-        return None
-    return datetime.combine(now.date(), target_time, tzinfo=now.tzinfo)
+    """Resolve today's target for restart recovery without rolling to tomorrow."""
+    return _resolve_day(hass, coordinator, shutter, action, profile, now.date(), now.tzinfo)
 
 
 def is_automation_enabled(
@@ -578,7 +520,10 @@ Returns a time-sorted list (action, datetime). Starts deliberately at the beginn
             results.append((action, candidate))
             # Search further a microsecond after the found time,
             # otherwise the same date would be found again (infinite loop).
-            cursor = candidate + timedelta(seconds=1)
+            cursor = (
+                (dt_util.as_utc(candidate) + timedelta(seconds=1)).astimezone(now.tzinfo)
+                if now.tzinfo is not None else candidate + timedelta(seconds=1)
+            )
 
-    results.sort(key=lambda item: item[1])
+    results.sort(key=lambda item: dt_util.as_utc(item[1]))
     return results

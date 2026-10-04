@@ -67,6 +67,8 @@ def now():
 
 dt_mod.now = now
 dt_mod.DEFAULT_TIME_ZONE = timezone.utc
+dt_mod.as_utc = lambda value: value.replace(tzinfo=timezone.utc).astimezone(timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+dt_mod.as_local = lambda value: value.astimezone(dt_mod.DEFAULT_TIME_ZONE)
 
 
 def parse_datetime(value):

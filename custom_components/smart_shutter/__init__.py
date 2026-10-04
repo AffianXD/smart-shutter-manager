@@ -218,6 +218,9 @@ def _async_cleanup_orphaned_profile_entities(
             if remainder is not None:
                 break
 
+        if remainder is not None:
+            for season in ("summer", "winter"):
+                remainder = remainder.removesuffix(f"_{season}")
         if remainder is None or remainder in fixed_suffixes:
             continue  # does not belong to our shutter devices, or is a fixed (not profile-bound) Select
 

@@ -12,6 +12,9 @@ import re
 import uuid
 
 import voluptuous as vol
+import homeassistant.util.dt as dt_util
+
+from .seasons import CONF_SEASONAL_ENABLED, prepare_seasonal_options, seasonal_enabled, season_at
 
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
@@ -250,6 +253,7 @@ async def handle_get_config(hass, connection, msg):
     # resolved with delivery).
     basic_settings = (
         {
+            "seasonal_enabled": seasonal_enabled(coordinator),
             "holiday_entity": options.get(CONF_HOLIDAY_ENTITY),
             "frost_entity": options.get(CONF_FROST_ENTITY),
             "outside_temp_sensor": options.get(CONF_OUTSIDE_TEMP_SENSOR),
@@ -350,6 +354,8 @@ async def handle_get_config(hass, connection, msg):
             "restricted": allowed_area_ids is not None,
             "shortcuts": _visible_home_shortcuts(shortcuts, allowed_area_ids),
             "basic_settings": basic_settings,
+            "seasonal_enabled": seasonal_enabled(coordinator),
+            "active_season": season_at(dt_util.now()),
             "custom_areas": custom_areas,
             "shutter_areas": shutter_areas,
             "area_auto_temp_sensors": area_auto_temp_sensors,
@@ -366,6 +372,7 @@ async def handle_get_config(hass, connection, msg):
     {
         vol.Required("type"): "smart_shutter/save_basic_settings",
         vol.Optional("entry_id"): str,
+        vol.Optional("seasonal_enabled"): bool,
         vol.Optional("holiday_entity"): vol.Any(str, None),
         vol.Optional("frost_entity"): vol.Any(str, None),
         vol.Optional("outside_temp_sensor"): vol.Any(str, None),
@@ -392,6 +399,10 @@ async def handle_save_basic_settings(hass, connection, msg):
         return
 
     data = dict(entry.options)
+    if CONF_SEASONAL_ENABLED in msg:
+        data[CONF_SEASONAL_ENABLED] = msg[CONF_SEASONAL_ENABLED]
+        coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+        prepare_seasonal_options(coordinator, data)
 
     if "holiday_entity" in msg:
         if msg["holiday_entity"]:
