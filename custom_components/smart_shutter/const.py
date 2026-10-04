@@ -220,6 +220,7 @@ SERVICE_SET_EXTERNAL_TRIGGER = "set_external_trigger"
 # to multiple areas.
 CONF_CUSTOM_AREAS = "custom_areas"  # list[dict], see structure below
 CONF_SHUTTER_AREAS = "shutter_areas"  # dict[cover_entity_id, list[area_id]] (since v0.16, previously: single area_id-String)
+CONF_HOME_SHORTCUTS = "home_shortcuts"  # Shared, ordered dashboard shortcuts for this config entry
 
 # Structure of a Custom Area entry (dict, JSON-serializable):
 # id:                str       - stable unique ID, e.g. "area_3f9a1b2c"

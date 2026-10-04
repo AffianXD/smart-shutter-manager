@@ -8,6 +8,7 @@ All commands require Admin Rights (like the Options Dialog also)."""
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 
 import voluptuous as vol
@@ -28,6 +29,7 @@ from .const import (
     CONF_INSIDE_TEMP_SENSOR,
     CONF_FROST_THRESHOLD_C,
     DEFAULT_FROST_THRESHOLD_C,
+    CONF_HOME_SHORTCUTS,
     CONF_HOLIDAY_ENTITY,
     CONF_MANUAL_PAUSE_MINUTES,
     CONF_NAMES,
@@ -61,6 +63,92 @@ from .scheduler import compute_forecast, find_overlapping_rules
 from .shutter_management import available_covers, async_update_covers
 
 _LOGGER = logging.getLogger(__name__)
+
+DEFAULT_HOME_SHORTCUTS = [
+    {"id": "default-open", "name": "All up", "icon": "mdi:arrow-up-bold-circle-outline", "kind": "cover", "target": "all", "action": "open"},
+    {"id": "default-stop", "name": "Stop", "icon": "mdi:stop-circle-outline", "kind": "cover", "target": "all", "action": "stop"},
+    {"id": "default-close", "name": "All down", "icon": "mdi:arrow-down-bold-circle-outline", "kind": "cover", "target": "all", "action": "close"},
+]
+SHORTCUT_NAV_VIEWS = {
+    "overview", "list", "settings-areas", "settings-basic", "settings-schedules",
+    "settings-triggers", "settings-global", "settings-shutters",
+}
+
+
+def _validate_home_shortcut(shortcut: dict, area_ids: set[str]) -> tuple[dict | None, str | None]:
+    """Return a normalized shortcut or a validation error code."""
+    raw_id = shortcut.get("id")
+    if raw_id is not None and not isinstance(raw_id, str):
+        return None, "invalid_id"
+    shortcut_id = raw_id or uuid.uuid4().hex[:12]
+    raw_name = shortcut.get("name")
+    raw_icon = shortcut.get("icon")
+    if not isinstance(raw_name, str) or not isinstance(raw_icon, str):
+        return None, "invalid_name" if not isinstance(raw_name, str) else "invalid_icon"
+    name = raw_name.strip()
+    icon = raw_icon.strip()
+    kind = shortcut.get("kind")
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,48}", shortcut_id):
+        return None, "invalid_id"
+    if not name or len(name) > 40:
+        return None, "invalid_name"
+    if len(icon) > 80 or not re.fullmatch(r"mdi:[a-z0-9-]+", icon):
+        return None, "invalid_icon"
+
+    if not isinstance(kind, str) or kind not in {"navigate", "cover", "postpone", "skip", "automation"}:
+        return None, "invalid_kind"
+    normalized = {"id": shortcut_id, "name": name, "icon": icon, "kind": kind}
+    if kind == "navigate":
+        view = shortcut.get("view")
+        if not isinstance(view, str) or view not in SHORTCUT_NAV_VIEWS:
+            return None, "invalid_view"
+        normalized["view"] = view
+        return normalized, None
+
+    target = shortcut.get("target")
+    if not isinstance(target, str) or (target != "all" and target not in area_ids):
+        return None, "invalid_target"
+    normalized["target"] = target
+    action = shortcut.get("action")
+    if not isinstance(action, str) or action not in ({"open", "close", "stop"} if kind == "cover" else {"open", "close"}):
+        return None, "invalid_action"
+    normalized["action"] = action
+    if kind == "postpone":
+        raw_minutes = shortcut.get("minutes")
+        if isinstance(raw_minutes, bool) or not isinstance(raw_minutes, (int, str)):
+            return None, "invalid_minutes"
+        try:
+            minutes = int(raw_minutes)
+        except ValueError:
+            return None, "invalid_minutes"
+        if not 1 <= minutes <= 1440:
+            return None, "invalid_minutes"
+        normalized["minutes"] = minutes
+    elif kind == "automation":
+        if not isinstance(shortcut.get("enabled"), bool):
+            return None, "invalid_enabled"
+        normalized["enabled"] = shortcut["enabled"]
+    return normalized, None
+
+
+def _visible_home_shortcuts(shortcuts: list[dict], allowed_area_ids: set[str] | None) -> list[dict]:
+    """Hide shortcuts whose target or destination is outside a guest's view."""
+    if allowed_area_ids is None:
+        return shortcuts
+    if not allowed_area_ids:
+        return []
+    visible = []
+    guest_views = {"overview", "list", "settings-areas"}
+    for shortcut in shortcuts:
+        if shortcut.get("kind") == "navigate":
+            if shortcut.get("view") in guest_views:
+                visible.append(shortcut)
+        elif shortcut.get("target") == "all":
+            if shortcut.get("kind") != "automation":
+                visible.append(shortcut)
+        elif shortcut.get("target") in allowed_area_ids:
+            visible.append(shortcut)
+    return visible
 
 
 def _get_entry(hass: HomeAssistant, entry_id: str | None) -> ConfigEntry | None:
@@ -129,6 +217,7 @@ async def handle_get_config(hass, connection, msg):
 
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     options = entry.options
+    shortcuts = options.get(CONF_HOME_SHORTCUTS, DEFAULT_HOME_SHORTCUTS)
     allowed_area_ids = _allowed_area_ids(coordinator, connection)
 
     if allowed_area_ids is not None and not allowed_area_ids:
@@ -140,6 +229,7 @@ async def handle_get_config(hass, connection, msg):
             {
                 "entry_id": entry.entry_id,
                 "restricted": True,
+                "shortcuts": _visible_home_shortcuts(shortcuts, allowed_area_ids),
                 "basic_settings": {},
                 "custom_areas": [],
                 "shutter_areas": {},
@@ -258,6 +348,7 @@ async def handle_get_config(hass, connection, msg):
         {
             "entry_id": entry.entry_id,
             "restricted": allowed_area_ids is not None,
+            "shortcuts": _visible_home_shortcuts(shortcuts, allowed_area_ids),
             "basic_settings": basic_settings,
             "custom_areas": custom_areas,
             "shutter_areas": shutter_areas,
@@ -787,6 +878,46 @@ async def handle_save_custom_areas(hass, connection, msg):
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "smart_shutter/save_shortcuts",
+        vol.Optional("entry_id"): str,
+        vol.Required("shortcuts"): [dict],
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_save_shortcuts(hass, connection, msg):
+    """Persist the shared, ordered dashboard shortcuts for one config entry."""
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
+        return
+
+    area_ids = {
+        area.get("id")
+        for area in entry.options.get(CONF_CUSTOM_AREAS, [])
+        if area.get("id")
+    }
+    normalized = []
+    ids = set()
+    for shortcut in msg["shortcuts"]:
+        item, error = _validate_home_shortcut(shortcut, area_ids)
+        if error:
+            connection.send_result(msg["id"], {"success": False, "validation_error": error})
+            return
+        if item["id"] in ids:
+            connection.send_result(msg["id"], {"success": False, "validation_error": "duplicate_id"})
+            return
+        ids.add(item["id"])
+        normalized.append(item)
+
+    data = dict(entry.options)
+    data[CONF_HOME_SHORTCUTS] = normalized
+    hass.config_entries.async_update_entry(entry, options=data)
+    connection.send_result(msg["id"], {"success": True, "shortcuts": normalized})
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "smart_shutter/save_shutter_areas",
         vol.Optional("entry_id"): str,
         vol.Required("shutter_areas"): {str: vol.Any([str], str, None)},
@@ -914,6 +1045,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_get_event_history)
     websocket_api.async_register_command(hass, handle_get_forecast)
     websocket_api.async_register_command(hass, handle_save_custom_areas)
+    websocket_api.async_register_command(hass, handle_save_shortcuts)
     websocket_api.async_register_command(hass, handle_save_shutter_areas)
     websocket_api.async_register_command(hass, handle_save_own_area_settings)
     websocket_api.async_register_command(hass, handle_save_own_area_schedules)

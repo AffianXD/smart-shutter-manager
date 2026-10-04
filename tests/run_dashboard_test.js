@@ -43,6 +43,11 @@ async function main() {
               { entity_id: fx.coverEntityId2, name: "Büro umbenannt" },
             ],
             custom_areas: [],
+            shortcuts: [
+              { id: "default-open", name: "All up", icon: "mdi:arrow-up-bold-circle-outline", kind: "cover", target: "all", action: "open" },
+              { id: "default-stop", name: "Stop", icon: "mdi:stop-circle-outline", kind: "cover", target: "all", action: "stop" },
+              { id: "default-close", name: "All down", icon: "mdi:arrow-down-bold-circle-outline", kind: "cover", target: "all", action: "close" },
+            ],
           };
           if (type === "smart_shutter/get_forecast") return { forecast: {} };
           return {};

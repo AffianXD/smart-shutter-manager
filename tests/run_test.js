@@ -27,7 +27,14 @@ async function main() {
 
   // Fake hass-Objekt in der Seite installieren und der Karte zuweisen.
   await page.evaluate((fx) => {
+    if (!customElements.get("ha-icon-picker")) {
+      customElements.define("ha-icon-picker", class extends HTMLElement {
+        get value() { return this.getAttribute("value") || ""; }
+        set value(value) { this.setAttribute("value", value); }
+      });
+    }
     window.__serviceCalls = [];
+    window.__shortcutSaveEntryIds = [];
     const states = fx.states;
     const hass = {
       states,
@@ -41,13 +48,24 @@ async function main() {
         if (msg.type === "config/auth/list") return [];
         if (msg.type === "smart_shutter/get_config")
           return {
+            entry_id: "test-entry",
             covers: [fx.coverEntityId, fx.coverEntityId2],
             custom_schedules: fx.customSchedules,
             schedule_conflicts: fx.scheduleConflicts,
             external_triggers: [],
             custom_areas: window.__customAreas || [],
             shutter_areas: window.__shutterAreas || {},
+            shortcuts: window.__homeShortcuts || [
+              { id: "default-open", name: "All up", icon: "mdi:arrow-up-bold-circle-outline", kind: "cover", target: "all", action: "open" },
+              { id: "default-stop", name: "Stop", icon: "mdi:stop-circle-outline", kind: "cover", target: "all", action: "stop" },
+              { id: "default-close", name: "All down", icon: "mdi:arrow-down-bold-circle-outline", kind: "cover", target: "all", action: "close" },
+            ],
           };
+        if (msg.type === "smart_shutter/save_shortcuts") {
+          window.__shortcutSaveEntryIds.push(msg.entry_id);
+          window.__homeShortcuts = msg.shortcuts;
+          return { success: true, shortcuts: msg.shortcuts };
+        }
         if (msg.type === "smart_shutter/save_custom_areas") {
           for (const a of msg.areas) if (!a.id) a.id = "area_" + Math.random().toString(16).slice(2, 8);
           window.__customAreas = msg.areas;
@@ -370,9 +388,9 @@ async function main() {
     const body = document.getElementById("card").shadowRoot.querySelector(".body");
     return {
       hasOldShutterList: !!body.querySelector("[data-overview-shutter-list]"),
-      hasQuickOpen: !!body.querySelector('.ssm-shortcut-grid [data-bulk="open"]'),
-      hasQuickStop: !!body.querySelector('.ssm-shortcut-grid [data-bulk="stop"]'),
-      hasQuickClose: !!body.querySelector('.ssm-shortcut-grid [data-bulk="close"]'),
+      hasQuickOpen: !!body.querySelector('.ssm-shortcut-grid [data-custom-shortcut="default-open"]'),
+      hasQuickStop: !!body.querySelector('.ssm-shortcut-grid [data-custom-shortcut="default-stop"]'),
+      hasQuickClose: !!body.querySelector('.ssm-shortcut-grid [data-custom-shortcut="default-close"]'),
       hasAutomationToggle: !!body.querySelector(".ssm-automation-card .switch-toggle"),
       hasAreasShortcut: !!body.querySelector('[data-settings-nav="settings-areas"].ssm-nav-card'),
       hasListShortcut: !!body.querySelector('[data-nav="list"].ssm-nav-card'),
@@ -383,6 +401,64 @@ async function main() {
   check("Dashboard-Redesign: globaler Automatik-Toggle direkt sichtbar", dashRedesignState.hasAutomationToggle);
   check("Dashboard-Redesign: Bereiche-Shortcut vorhanden", dashRedesignState.hasAreasShortcut);
   check("Dashboard-Redesign: 'Alle Rollläden'-Shortcut zur Liste vorhanden", dashRedesignState.hasListShortcut);
+
+  await page.evaluate(() => {
+    const root = document.getElementById("card").shadowRoot;
+    root.querySelector('[data-settings-nav="settings-shortcuts"]').click();
+    root.querySelector('[data-shortcut-edit="__new__"]').click();
+    window.__shortcutIconPickerTag = root.querySelector('[data-shortcut-field="icon"]').tagName;
+    const action = root.querySelector('[data-shortcut-field="action"]');
+    action.value = "stop";
+    const kind = root.querySelector('[data-shortcut-field="kind"]');
+    kind.value = "skip";
+    kind.dispatchEvent(new Event("change", { bubbles: true }));
+    window.__shortcutActionAfterTypeChange = {
+      value: action.value,
+      hasStop: Array.from(action.options).some((option) => option.value === "stop"),
+    };
+    root.querySelector("[data-shortcut-back]").click();
+    root.querySelector('[data-shortcut-edit="__new__"]').click();
+    root.querySelector('[data-shortcut-field="name"]').value = "Test shortcut";
+    root.querySelector('[data-shortcut-field="icon"]').value = "mdi:weather-sunny";
+    root.querySelector('[data-shortcut-save]').click();
+  });
+  await page.waitForTimeout(150);
+  const shortcutActionChange = await page.evaluate(() => window.__shortcutActionAfterTypeChange);
+  check("Startseiten-Shortcuts: Typwechsel setzt unzulässige Aktion zurück", shortcutActionChange.value === "open" && !shortcutActionChange.hasStop);
+  const customShortcutSaved = await page.evaluate(() => {
+    const card = document.getElementById("card");
+    return window.__homeShortcuts.length === 4 && window.__homeShortcuts.at(-1).icon === "mdi:weather-sunny" &&
+      card._view === "settings-shortcuts" &&
+      window.__shortcutSaveEntryIds.at(-1) === "test-entry";
+  });
+  check("Startseiten-Shortcuts: neuen Shortcut in der HA-Instanz-Konfiguration speichern", customShortcutSaved);
+  check("Startseiten-Shortcuts: MDI-Icon als auswählbarer Home-Assistant-Picker", await page.evaluate(() => window.__shortcutIconPickerTag === "HA-ICON-PICKER"));
+  await page.evaluate(() => {
+    const root = document.getElementById("card").shadowRoot;
+    root.querySelector('[data-nav="overview"]').click();
+  });
+  await page.waitForTimeout(50);
+  const customShortcutButton = await page.evaluate(() => !!document.getElementById("card").shadowRoot.querySelector('.ssm-shortcut-grid [data-custom-shortcut][aria-label="Test shortcut"]'));
+  check("Startseiten-Shortcuts: gespeicherter Shortcut erscheint dynamisch auf der Startseite", customShortcutButton);
+  const staleShortcutTarget = await page.evaluate(() => {
+    const card = document.getElementById("card");
+    const saved = card._backendConfig.shortcuts;
+    card._backendConfig.shortcuts = [...saved, {
+      id: "stale-area-shortcut", name: "Old area", icon: "mdi:home", kind: "cover",
+      target: "deleted-area", action: "open",
+    }];
+    card._view = "settings-shortcuts";
+    card._render();
+    card.shadowRoot.querySelector('[data-shortcut-edit="stale-area-shortcut"]').click();
+    const target = card.shadowRoot.querySelector('[data-shortcut-field="target"]');
+    const state = { value: target.value, unavailable: target.selectedOptions[0].textContent };
+    card._backendConfig.shortcuts = saved;
+    card._view = "overview";
+    card._render();
+    return state;
+  });
+  check("Startseiten-Shortcuts: gelöschter Bereich wird beim Bearbeiten nicht zu Alle umgedeutet",
+    staleShortcutTarget.value === "deleted-area" && staleShortcutTarget.unavailable.includes("nicht mehr verfügbar"));
 
   // Verschieben/Überspringen-Blöcke standardmäßig eingeklappt, per
   // Klick aufklappbar. Zustand explizit zurücksetzen (ein früherer
