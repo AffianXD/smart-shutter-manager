@@ -10,7 +10,7 @@
       },
       "names": {
         "title": "Namen vergeben",
-        "description": "Vergib optional individuelle Anzeigenamen für die ausgewählten Rollläden."
+        "description": "Vergib optional individuelle Anzeigenamen. Nach dem Speichern findest du den Smart Shutter Manager in der Seitenleiste unter „Rollläden“. Öffnen und Schließen starten zunächst ausgeschaltet; prüfe dort zuerst Zeiten und Vorschau."
       }
     },
     "error": {

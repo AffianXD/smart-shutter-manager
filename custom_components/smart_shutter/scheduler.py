@@ -554,6 +554,7 @@ def compute_forecast(
     shutter: ManagedShutter,
     days: int,
     now: datetime | None = None,
+    include_disabled: bool = False,
 ) -> list[tuple[str, datetime]]:
     """Calculates the upcoming open/close appointments for ONE shutter over the next `days` days (forecast timeline, see card "Timeline" - native HA history can only show past by definition, future must be calculated manually).
 
@@ -566,7 +567,7 @@ Returns a time-sorted list (action, datetime). Starts deliberately at the beginn
     results: list[tuple[str, datetime]] = []
 
     for action in (ACTION_OPEN, ACTION_CLOSE):
-        if not is_automation_enabled(coordinator, action, shutter):
+        if not include_disabled and not is_automation_enabled(coordinator, action, shutter):
             continue
         cursor = day_start
         area_ids = coordinator.shutter_areas.get(shutter.entity_id, [])

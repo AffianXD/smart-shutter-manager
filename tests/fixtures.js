@@ -60,8 +60,14 @@ function buildFixture() {
   entities.push(reg("number.global_close_sun_offset", globalHaId, `${globalDeviceKey}_close_sun_offset`, "number", "0", { min: -60, max: 60, step: 1 }));
   entities.push(reg("number.global_open_position", globalHaId, `${globalDeviceKey}_open_position`, "number", "100", { min: 0, max: 100, step: 1 }));
   entities.push(reg("number.global_close_position", globalHaId, `${globalDeviceKey}_close_position`, "number", "0", { min: 0, max: 100, step: 1 }));
-  entities.push(reg("time.global_open_werktag", globalHaId, `${globalDeviceKey}_open_werktag`, "time", "07:00:00"));
-  entities.push(reg("time.global_close_werktag", globalHaId, `${globalDeviceKey}_close_werktag`, "time", "20:00:00"));
+  for (const [suffix, open, close] of [
+    ["werktag", "07:00:00", "20:00:00"],
+    ["wochenende", "08:30:00", "22:30:00"],
+    ["ferien", "09:00:00", "22:00:00"],
+  ]) {
+    entities.push(reg(`time.global_open_${suffix}`, globalHaId, `${globalDeviceKey}_open_${suffix}`, "time", open));
+    entities.push(reg(`time.global_close_${suffix}`, globalHaId, `${globalDeviceKey}_close_${suffix}`, "time", close));
+  }
 
   // --- zweiter Rollladen (nur fürs Bulk-Editing gebraucht) ---
   const coverEntityId2 = "cover.testroom2";

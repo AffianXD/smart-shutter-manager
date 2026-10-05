@@ -31,6 +31,7 @@ from .const import (
     CONF_HOLIDAY_ENTITY,
     CONF_MANUAL_PAUSE_MINUTES,
     CONF_NAMES,
+    CONF_ONBOARDING_COMPLETED,
     CONF_NOTIFICATION_MAX_AGE,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_TEXT_FROST,
@@ -148,6 +149,7 @@ async def handle_get_config(hass, connection, msg):
                 "schedule_conflicts": {},
                 "external_triggers": [],
                 "covers": [],
+                "onboarding_completed": True,
             },
         )
         return
@@ -267,8 +269,32 @@ async def handle_get_config(hass, connection, msg):
             "external_triggers": external_triggers,
             "covers": covers,
             "shutter_notes": shutter_notes,
+            # Entries created before onboarding was added remain on the normal
+            # dashboard; only new entries explicitly store False.
+            "onboarding_completed": options.get(CONF_ONBOARDING_COMPLETED, True),
         },
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "smart_shutter/complete_onboarding",
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_complete_onboarding(hass, connection, msg):
+    """Persist that an administrator finished the first-run guide."""
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Smart Shutter Manager config entry not found.")
+        return
+
+    options = dict(entry.options)
+    options[CONF_ONBOARDING_COMPLETED] = True
+    hass.config_entries.async_update_entry(entry, options=options)
+    connection.send_result(msg["id"], {"success": True})
 
 
 @websocket_api.websocket_command(
@@ -576,6 +602,7 @@ async def handle_get_event_history(hass, connection, msg):
         vol.Optional("entry_id"): str,
         vol.Optional("entity_id"): str,
         vol.Optional("days", default=7): vol.All(int, vol.Range(min=1, max=14)),
+        vol.Optional("include_disabled", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -588,6 +615,10 @@ async def handle_get_forecast(hass, connection, msg):
 
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     days = msg.get("days", 7)
+    include_disabled = msg.get("include_disabled", False)
+    if include_disabled and not connection.user.is_admin:
+        connection.send_error(msg["id"], "unauthorized", "Only administrators may preview disabled schedules.")
+        return
     entity_id = msg.get("entity_id")
     allowed_area_ids = _allowed_area_ids(coordinator, connection)
 
@@ -606,7 +637,9 @@ async def handle_get_forecast(hass, connection, msg):
         shutter = coordinator.shutters.get(cover_entity_id)
         if shutter is None:
             continue
-        entries = compute_forecast(hass, coordinator, shutter, days)
+        entries = compute_forecast(
+            hass, coordinator, shutter, days, include_disabled=include_disabled
+        )
         forecast[cover_entity_id] = [
             {"action": action, "ts": ts.isoformat()} for action, ts in entries
         ]
@@ -907,6 +940,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_get_available_covers)
     websocket_api.async_register_command(hass, handle_save_covers)
     websocket_api.async_register_command(hass, handle_get_config)
+    websocket_api.async_register_command(hass, handle_complete_onboarding)
     websocket_api.async_register_command(hass, handle_save_basic_settings)
     websocket_api.async_register_command(hass, handle_save_custom_schedules)
     websocket_api.async_register_command(hass, handle_save_external_triggers)

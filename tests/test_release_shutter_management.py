@@ -132,6 +132,31 @@ async def test_guest_cannot_discover_or_change_covers(hass):
             handler(hass, connection(False), {"id": 1, **msg})
 
 
+async def test_only_admin_can_complete_onboarding(hass):
+    entry = entry_with_covers(hass)
+    conn = connection()
+    await invoke(hass, ws.handle_complete_onboarding, conn, {
+        "type": "smart_shutter/complete_onboarding", "entry_id": entry.entry_id,
+    })
+    assert entry.options["onboarding_completed"] is True
+
+    with pytest.raises(Unauthorized):
+        ws.handle_complete_onboarding(hass, connection(False), {
+            "id": 2, "type": "smart_shutter/complete_onboarding", "entry_id": entry.entry_id,
+        })
+
+
+async def test_only_admin_can_request_disabled_schedule_preview(hass):
+    entry = entry_with_covers(hass)
+    conn = connection(admin=False)
+    await invoke(hass, ws.handle_get_forecast, conn, {
+        "type": "smart_shutter/get_forecast",
+        "entry_id": entry.entry_id,
+        "include_disabled": True,
+    })
+    assert conn.send_error.call_args.args[1] == "unauthorized"
+
+
 @pytest.mark.usefixtures("enable_custom_integrations")
 async def test_options_menu_adds_management_and_validates_selection(hass):
     entry = entry_with_covers(hass)
