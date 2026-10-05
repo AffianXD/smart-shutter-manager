@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased: seasonal time profiles
+## Unreleased: v0.26.0
+
+- Add an interactive first-run wizard for schedule times, fixed or solar
+  triggers, target positions, optional holidays and areas, and a seven-day
+  preview. Keep both automations disabled until the user explicitly finishes.
+- Group each solar offset under its matching sunrise or sunset trigger, use a
+  100% default opening position, and route the completed setup's preview to the
+  dashboard timeline.
+
+## Unreleased: v0.25.0
+
+- Add configurable dashboard shortcuts for navigation, cover actions, and
+  automations.
+
+## Unreleased: v0.24.0
+
+- Add per-shutter notification settings to inherit area/global recipients, turn
+  notifications off, or choose a custom service. Apply routing to movement,
+  frost, pre-close, and sun-rule notifications.
+
+## Unreleased: v0.23.0
 
 - Add optional summer/winter schedules selected by daylight saving time in
   Home Assistant's timezone, globally and per shutter.
@@ -14,6 +34,13 @@
   use calendar-day buckets in timelines.
 - Cover native restoration, DST gaps/folds, individual inheritance, disabled
   behavior, and card interactions with simulated covers.
+
+## Unreleased: v0.22.1
+
+- Unify add, remove, and rename in one admin-only shutter-management view with
+  automatic saving and visible save status.
+- Retry failed saves, keep temporarily missing managed covers selectable, and
+  preserve the original cover entities when managed shutters are removed.
 
 ## Unreleased: v0.22.0
 

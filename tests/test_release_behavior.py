@@ -57,12 +57,13 @@ def test_all_card_websocket_commands_are_registered(monkeypatch) -> None:
 
     ws.async_register_websocket_commands(object())
 
-    assert len(names) == 16
-    assert len(set(names)) == 16
+    assert len(names) == 17
+    assert len(set(names)) == 17
     assert {
         "handle_get_config",
         "handle_save_shortcuts",
         "handle_save_shutter_notifications",
+        "handle_complete_onboarding",
         "handle_save_own_area_settings",
         "handle_save_own_area_schedules",
         "handle_get_forecast",

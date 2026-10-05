@@ -129,7 +129,9 @@ class GlobalAutomationSwitch(SwitchEntity, RestoreEntity):
         self._registry_key = global_automation_registry_key(action)
         self._attr_translation_key = self._registry_key
         self._attr_unique_id = f"{global_device_id}_{self._registry_key}"
-        self._attr_is_on = True  # Standard: Automatic mode active
+        # New installations require an explicit per-direction activation in
+        # the onboarding guide. RestoreEntity keeps established choices intact.
+        self._attr_is_on = False
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, global_device_id)},

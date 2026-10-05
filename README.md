@@ -5,7 +5,7 @@ and controls existing `cover` entities. It includes a dashboard card, schedule
 profiles, sun position rules, frost protection, notifications, and area based
 settings. It does not replace the cover integration for your devices.
 
-> **Release status:** v0.21.0 is being prepared. The inherited v0.20.2 code
+> **Release status:** v0.26.0 is being prepared. The inherited v0.20.2 code
 > was reconstructed after a workspace reset; its former full test suite was
 > lost. Check the test and release status before installing this branch.
 
@@ -44,15 +44,17 @@ add the integration from **Settings → Devices & services**.
 ## First use
 
 1. During integration setup, select the covers to manage.
-2. Open **Shutters** in the Home Assistant sidebar. The integration also
+2. Open **Shutters** in the Home Assistant sidebar. The first-run wizard lets
+   you enter weekday, weekend, and holiday times in place, choose fixed times
+   or sunrise/sunset triggers, and set target positions. The integration also
    provides `custom:smart-shutter-card` for a regular dashboard.
-3. Review the global weekday, weekend, and holiday times before relying on
-   automation. **Open and close automation switches start enabled.** The
-   initial times are 07:00/21:30 on weekdays, 08:30/22:30 on weekends, and
-   09:00/22:00 on holidays. Turn off the global open/close switches while
-   configuring if these times are unsuitable.
-4. Adjust per-shutter settings, areas, and notifications in the card. Check
-   the next-action preview before leaving automation enabled.
+3. Optionally select a holiday entity and assign shutters to areas. Review the
+   seven-day preview before choosing whether to enable opening and closing.
+   **Both automations start disabled on a new setup.** Default times are
+   07:00/21:30 on weekdays, 08:30/22:30 on weekends, and 09:00/22:00 on holidays.
+4. Per-shutter settings, custom profiles, external triggers, and notifications
+   remain available in the card's Settings. After setup, the guide stays
+   available for reviewing the schedule and preview.
 
 The integration serves its bundled card at
 `/smart_shutter_frontend/smart-shutter-card.js` and tries to register it as a
@@ -169,7 +171,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and
 [CHANGELOG.md](CHANGELOG.md) for release notes. Report a reproducible issue
 through the [issue tracker](https://github.com/AffianXD/smart-shutter-manager/issues).
 Local regression checks have passed, while public CI and installation smoke
-tests remain pending before the v0.21.0 release.
+tests remain pending before the v0.26.0 release.
 
 Smart Shutter Manager is an independent community project and is not an
 official Home Assistant integration.

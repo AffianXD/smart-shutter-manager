@@ -9,8 +9,36 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.core import State
 
 from custom_components.smart_shutter import async_migrate_entry
-from custom_components.smart_shutter.const import DATA_COORDINATOR, DOMAIN
+from custom_components.smart_shutter.const import (
+    CONF_ONBOARDING_COMPLETED,
+    DATA_COORDINATOR,
+    DOMAIN,
+    GLOBAL_DEVICE_ID,
+)
 from custom_components.smart_shutter.websocket_api import _allowed_area_ids
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_new_config_flow_starts_onboarding(hass):
+    hass.states.async_set(
+        "cover.kitchen",
+        "closed",
+        {"friendly_name": "Kitchen shutter", "supported_features": 11, "current_position": 0},
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    assert result["step_id"] == "user"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"cover_selection": ["cover.kitchen"]}
+    )
+    assert result["step_id"] == "names"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"cover.kitchen": "Kitchen"}
+    )
+    assert result["type"] == "create_entry"
+    assert result["options"][CONF_ONBOARDING_COMPLETED] is False
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -104,6 +132,17 @@ async def test_fresh_entry_registers_entities_services_and_websocket(hass, hass_
     assert device is not None
     assert entry.entry_id in device.config_entries
     assert device.name == "Kitchen Rollladen"
+    registry = er.async_get(hass)
+    global_open_id = registry.async_get_entity_id(
+        "switch", DOMAIN,
+        f"{GLOBAL_DEVICE_ID}_{entry.entry_id}_global_automation_open",
+    )
+    global_close_id = registry.async_get_entity_id(
+        "switch", DOMAIN,
+        f"{GLOBAL_DEVICE_ID}_{entry.entry_id}_global_automation_close",
+    )
+    assert hass.states.get(global_open_id).state == "off"
+    assert hass.states.get(global_close_id).state == "off"
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")

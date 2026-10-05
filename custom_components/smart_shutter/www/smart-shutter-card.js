@@ -570,6 +570,20 @@
       this._sunDirectionOverride = undefined;
       this._bulkEditMode = false;
       this._bulkSelection = new Set();
+      this._onboardingTimesReviewed = false;
+      this._onboardingPreviewReviewed = false;
+      this._onboardingReturnView = null;
+      this._onboardingPreviewReturnStep = "areas";
+      this._onboardingError = null;
+      this._onboardingForecastError = false;
+      this._onboardingStep = "schedule";
+      this._onboardingSavingCount = 0;
+      this._onboardingSaveErrors = {};
+      this._onboardingSaveMessage = null;
+      this._onboardingAreaDraft = null;
+      this._onboardingNewAreaId = null;
+      this._onboardingNewAreaMembers = new Set();
+      this._dashboardPreviewScrollPending = false;
       this._loaded = false;
       this._loadError = null;
       this._model = null;
@@ -730,6 +744,9 @@
           .map((e) => e.entity_id).sort().join(",");
         this._buildModel(entities, devices, areas, floors, haUsers);
         await this._loadBackendConfig();
+        if (this._isAdmin() && this._backendConfig && this._backendConfig.onboarding_completed === false) {
+          this._view = "onboarding";
+        }
         this._loadError = null;
       } catch (err) {
         this._loadError =
@@ -1124,21 +1141,74 @@
     }
 
     _setTime(entry, value) {
-      if (!entry || !value) return;
+      if (!entry || !value) return Promise.resolve();
       this._haptic("light");
-      this._hass.callService("time", "set_value", {
+      return this._hass.callService("time", "set_value", {
         entity_id: entry.entity_id,
         time: value,
       });
     }
 
     _setNumber(entry, value) {
-      if (!entry) return;
+      if (!entry) return Promise.resolve();
       this._haptic("light");
-      this._hass.callService("number", "set_value", {
+      return this._hass.callService("number", "set_value", {
         entity_id: entry.entity_id,
         value: Number(value),
       });
+    }
+
+    _trackOnboardingSave(entityId, promise) {
+      delete this._onboardingSaveErrors[entityId];
+      this._onboardingSavingCount += 1;
+      this._updateOnboardingSaveStatus();
+      Promise.resolve(promise)
+        .then(() => {
+          this._onboardingSaveMessage = this._language() === "de" ? "Änderung gespeichert." : "Change saved.";
+        })
+        .catch((err) => {
+          this._onboardingSaveErrors[entityId] = err && err.message ? err.message : String(err);
+          this._onboardingSaveMessage = null;
+          delete this._optimisticState[entityId];
+          if (this._view === "onboarding") this._render();
+        })
+        .finally(() => {
+          this._onboardingSavingCount = Math.max(0, this._onboardingSavingCount - 1);
+          this._updateOnboardingSaveStatus();
+        });
+    }
+
+    _onboardingSaveStatusState() {
+      const de = this._language() === "de";
+      const firstError = Object.values(this._onboardingSaveErrors || {})[0];
+      if (this._onboardingSavingCount) {
+        return { text: de ? "Speichere Änderungen …" : "Saving changes …", role: "status", live: "polite" };
+      }
+      if (firstError) {
+        return {
+          text: `${de ? "Speichern fehlgeschlagen" : "Could not save"}: ${firstError}`,
+          role: "alert",
+          live: "assertive",
+        };
+      }
+      return {
+        text: this._onboardingSaveMessage || (de
+          ? "Änderungen werden direkt gespeichert. Die Automatik bleibt bis zum Abschluss aus."
+          : "Changes save as you go. Automation stays off until setup is finished."),
+        role: "status",
+        live: "polite",
+      };
+    }
+
+    _updateOnboardingSaveStatus() {
+      const status = this.shadowRoot && this.shadowRoot.querySelector("[data-onboarding-save-status]");
+      if (!status) return;
+      const state = this._onboardingSaveStatusState();
+      status.textContent = state.text;
+      status.setAttribute("role", state.role);
+      status.setAttribute("aria-live", state.live);
+      const next = this.shadowRoot.querySelector("[data-onboarding-next]");
+      if (next) next.disabled = !!(this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors || {}).length);
     }
 
     _showToast(message) {
@@ -1723,6 +1793,77 @@
         }
         .settings-menu-item .name { font-weight: 600; font-size: 0.95em; }
         .settings-menu-item .meta { font-size: 0.78em; color: var(--ssm-muted); }
+        .onboarding { display: grid; gap: 14px; max-width: 720px; margin: 0 auto; }
+        .onboarding > * { min-width: 0; }
+        .onboarding-hero {
+          padding: 22px; border: 1px solid color-mix(in srgb, var(--primary-color) 22%, var(--ssm-border));
+          border-radius: 16px; background: linear-gradient(145deg,
+            color-mix(in srgb, var(--primary-color) 10%, var(--ssm-card-bg)), var(--ssm-card-bg) 72%);
+        }
+        .onboarding-eyebrow { color: var(--primary-color); font-size: 0.76em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+        .onboarding-hero h2 { font-size: 1.45em; margin: 6px 0; }
+        .onboarding-hero p, .onboarding-step p, .onboarding-activation p { color: var(--ssm-muted); margin: 4px 0 0; }
+        .onboarding-progress-track { height: 7px; margin-top: 18px; overflow: hidden; border-radius: 99px; background: var(--secondary-background-color, #eee); }
+        .onboarding-progress-fill { height: 100%; border-radius: inherit; background: var(--primary-color); transition: width 0.2s ease; }
+        .onboarding-progress-label { margin-top: 6px !important; font-size: 0.8em; }
+        .onboarding-step, .onboarding-activation {
+          padding: 15px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius);
+          background: var(--ssm-card-bg); box-shadow: var(--ssm-shadow);
+        }
+        .onboarding-step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+        .onboarding-step.is-done { border-color: color-mix(in srgb, var(--success-color, #43a047) 40%, var(--ssm-border)); }
+        .onboarding-step-number { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color); font-weight: 700; }
+        .onboarding-step.is-done .onboarding-step-number { background: color-mix(in srgb, var(--success-color, #43a047) 14%, transparent); color: var(--success-color, #2e7d32); }
+        .onboarding-step h3, .onboarding-activation h3 { margin: 1px 0 4px; color: var(--primary-text-color); font-size: 0.98em; text-transform: none; letter-spacing: 0; }
+        .onboarding-action { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); background: var(--ssm-card-bg); color: var(--primary-text-color); cursor: pointer; font: inherit; font-weight: 600; }
+        .onboarding-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+        .onboarding-choice { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 9px 11px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); }
+        .onboarding-choice input { width: 18px; height: 18px; accent-color: var(--primary-color); }
+        .onboarding-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .onboarding-footer .hint { flex: 1 1 260px; margin: 0; }
+        .onboarding-error { color: var(--error-color, #c62828); }
+        .onboarding-form-card, .onboarding-area-card {
+          min-width: 0; padding: 16px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius);
+          background: var(--ssm-card-bg); box-shadow: var(--ssm-shadow);
+        }
+        .onboarding-form-card h3, .onboarding-area-card h4 { margin: 0 0 6px; color: var(--primary-text-color); }
+        .onboarding-trigger-grid, .onboarding-profile-grid, .onboarding-position-grid {
+          display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px;
+        }
+        .onboarding-trigger-option {
+          min-width: 0; padding: 12px; border: 1px solid var(--ssm-border);
+          border-radius: var(--ssm-radius-sm); background: var(--secondary-background-color, #fafafa);
+        }
+        .onboarding-trigger-option > .control-row { margin-bottom: 0; }
+        .onboarding-trigger-offset { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ssm-border); }
+        .onboarding-trigger-offset .control-row {
+          display: grid; grid-template-columns: minmax(0, 1fr) 68px auto; align-items: center; gap: 8px; margin: 0;
+        }
+        .onboarding-trigger-offset .control-row label { grid-column: 1 / -1; min-width: 0; }
+        .onboarding-trigger-offset .control-row input[type="range"] { grid-column: 1; width: 100%; min-width: 0; }
+        .onboarding-trigger-offset .control-row input.number-exact { grid-column: 2; width: 68px; box-sizing: border-box; }
+        .onboarding-trigger-offset .control-row .unit { grid-column: 3; }
+        .onboarding-profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .onboarding-profile-card { min-width: 0; padding: 12px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); }
+        .onboarding-profile-card h4 { margin: 0 0 10px; font-size: 0.95em; }
+        .onboarding-profile-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .onboarding-profile-times label, .onboarding-new-area > label { display: grid; gap: 6px; min-width: 0; font-size: 0.84em; font-weight: 600; }
+        .onboarding-profile-times input[type="time"], .onboarding-new-area input[type="text"] { width: 100%; min-width: 0; box-sizing: border-box; }
+        .onboarding-area-card h4 { font-size: 0.98em; }
+        .onboarding-area-members { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
+        .onboarding-area-members .onboarding-choice { min-width: 0; margin: 0; }
+        .onboarding-new-area { padding-top: 12px; }
+        .onboarding-new-area summary { color: var(--primary-color); cursor: pointer; font-weight: 600; }
+        .onboarding-new-area > label { margin-top: 12px; }
+        .onboarding-step-actions, .onboarding-step-actions-end { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .onboarding-step-actions-end { justify-content: flex-end; }
+        .onboarding-step-actions > .meta { flex: 1 1 240px; min-width: 0; }
+        @media (max-width: 520px) { .onboarding-hero { padding: 17px; } .onboarding-choices { grid-template-columns: 1fr; } .onboarding-step { padding: 12px; } }
+        @media (max-width: 680px) {
+          .onboarding-profile-grid { grid-template-columns: 1fr; }
+          .onboarding-trigger-grid, .onboarding-position-grid { grid-template-columns: 1fr; }
+          .onboarding-form-card, .onboarding-area-card { padding: 13px; }
+        }
 
         .area-quick-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
         .area-quick-actions button {
@@ -1930,9 +2071,112 @@
     }
 
     _onClick(ev) {
+      const onboardingNextBtn = ev.target.closest("[data-onboarding-next]");
+      if (onboardingNextBtn) {
+        if (this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors).length) return;
+        this._haptic("selection");
+        this._onboardingTimesReviewed = true;
+        this._onboardingStep = "areas";
+        this._onboardingError = null;
+        this._render();
+        return;
+      }
+      const onboardingBackBtn = ev.target.closest("[data-onboarding-back]");
+      if (onboardingBackBtn) {
+        this._haptic("selection");
+        this._onboardingStep = "schedule";
+        this._render();
+        return;
+      }
+      const onboardingSkipAreasBtn = ev.target.closest("[data-onboarding-skip-areas]");
+      if (onboardingSkipAreasBtn) {
+        this._haptic("selection");
+        this._onboardingStep = "review";
+        this._onboardingPreviewReturnStep = "areas";
+        this._view = "onboarding-preview";
+        this._onboardingGlobalForecast = undefined;
+        this._onboardingForecastError = false;
+        this._render();
+        return;
+      }
+      const onboardingSaveAreasBtn = ev.target.closest("[data-onboarding-save-areas]");
+      if (onboardingSaveAreasBtn) {
+        this._saveOnboardingAreasAndPreview();
+        return;
+      }
+      const onboardingEditScheduleBtn = ev.target.closest("[data-onboarding-edit-schedule]");
+      if (onboardingEditScheduleBtn) {
+        this._onboardingStep = "schedule";
+        this._onboardingTimesReviewed = false;
+        this._onboardingPreviewReviewed = false;
+        this._render();
+        return;
+      }
+      const onboardingPreviewBtn = ev.target.closest("[data-onboarding-preview]");
+      if (onboardingPreviewBtn) {
+        this._haptic("selection");
+        if (this._backendConfig && this._backendConfig.onboarding_completed) {
+          this._dashboardPreviewScrollPending = true;
+          this._view = "overview";
+          this._render();
+          requestAnimationFrame(() => this._scrollDashboardToPreview());
+          return;
+        }
+        this._onboardingPreviewReturnStep = this._onboardingStep || "areas";
+        this._view = "onboarding-preview";
+        this._render();
+        return;
+      }
+      const onboardingPreviewBackBtn = ev.target.closest("[data-onboarding-close-preview]");
+      if (onboardingPreviewBackBtn) {
+        this._haptic("selection");
+        this._view = "onboarding";
+        this._onboardingStep = this._onboardingPreviewReturnStep || "areas";
+        this._render();
+        return;
+      }
+      const onboardingPreviewRetryBtn = ev.target.closest("[data-onboarding-preview-retry]");
+      if (onboardingPreviewRetryBtn) {
+        this._haptic("selection");
+        this._onboardingForecastError = false;
+        this._onboardingGlobalForecast = undefined;
+        this._loadGlobalForecast(7, true);
+        this._render();
+        return;
+      }
+      const onboardingPreviewReviewedBtn = ev.target.closest("[data-onboarding-preview-reviewed]");
+      if (onboardingPreviewReviewedBtn) {
+        this._haptic("success");
+        this._onboardingPreviewReviewed = true;
+        this._onboardingStep = this._backendConfig && this._backendConfig.onboarding_completed ? "completed" : "review";
+        this._view = "onboarding";
+        this._render();
+        return;
+      }
+      const onboardingCloseBtn = ev.target.closest("[data-onboarding-close]");
+      if (onboardingCloseBtn) {
+        this._haptic("selection");
+        this._view = "overview";
+        this._render();
+        return;
+      }
+      const onboardingFinishBtn = ev.target.closest("[data-onboarding-finish]");
+      if (onboardingFinishBtn) {
+        if (!this._onboardingPreviewReviewed || this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors).length) return;
+        this._completeOnboarding();
+        return;
+      }
+      const openOnboardingBtn = ev.target.closest('[data-settings-nav="onboarding"]');
+      if (openOnboardingBtn) {
+        this._haptic("selection");
+        this._view = "onboarding";
+        this._render();
+        return;
+      }
       const navBtn = ev.target.closest("[data-nav]");
       if (navBtn) {
         this._haptic("selection");
+        this._onboardingReturnView = null;
         this._view = navBtn.getAttribute("data-nav");
         this._render();
         return;
@@ -2014,7 +2258,13 @@
       const settingsBackBtn = ev.target.closest("[data-settings-back]");
       if (settingsBackBtn) {
         this._haptic("selection");
-        this._view = "settings";
+        if (this._onboardingReturnView) {
+          if (this._view === "settings-global") this._onboardingTimesReviewed = true;
+          this._view = this._onboardingReturnView;
+          this._onboardingReturnView = null;
+        } else {
+          this._view = "settings";
+        }
         this._render();
         return;
       }
@@ -2461,7 +2711,15 @@
       const sel = ev.target.closest("select[data-select-entity]");
       if (sel) {
         const entry = this._findEntry(sel.getAttribute("data-select-entity"));
-        this._selectOption(entry, sel.value);
+        const savePromise = this._selectOption(entry, sel.value);
+        const onboardingField = sel.hasAttribute("data-onboarding-field");
+        if (onboardingField && entry) {
+          this._onboardingTimesReviewed = false;
+          this._onboardingPreviewReviewed = false;
+          this._onboardingSaveMessage = null;
+          this._optimisticState[entry.entity_id] = sel.value;
+          this._trackOnboardingSave(entry.entity_id, savePromise);
+        }
         if (sel.hasAttribute("data-time-source-select") || sel.hasAttribute("data-type-select")) {
           // Optimistic overlay (see _state()): the real hate-
           // Roundtrip comes back asynchronously, but the cell
@@ -2481,13 +2739,39 @@
       const timeInput = ev.target.closest("input[type='time'][data-time-entity]");
       if (timeInput) {
         const entry = this._findEntry(timeInput.getAttribute("data-time-entity"));
-        this._setTime(entry, timeInput.value);
+        const savePromise = this._setTime(entry, timeInput.value);
+        if (timeInput.hasAttribute("data-onboarding-field") && entry) {
+          this._onboardingTimesReviewed = false;
+          this._onboardingPreviewReviewed = false;
+          this._onboardingSaveMessage = null;
+          this._trackOnboardingSave(entry.entity_id, savePromise);
+        }
         return;
       }
       const numberInput = ev.target.closest("input[data-number-entity]");
       if (numberInput) {
         const entry = this._findEntry(numberInput.getAttribute("data-number-entity"));
-        this._setNumber(entry, numberInput.value);
+        const savePromise = this._setNumber(entry, numberInput.value);
+        if (numberInput.hasAttribute("data-onboarding-field") && entry) {
+          this._onboardingTimesReviewed = false;
+          this._onboardingPreviewReviewed = false;
+          this._onboardingSaveMessage = null;
+          this._trackOnboardingSave(entry.entity_id, savePromise);
+        }
+        return;
+      }
+      const onboardingAreaMember = ev.target.closest("[data-onboarding-area-member]");
+      if (onboardingAreaMember) {
+        const key = `${onboardingAreaMember.getAttribute("data-onboarding-area-id")}::${onboardingAreaMember.getAttribute("data-onboarding-area-cover")}`;
+        if (!this._onboardingAreaDraft) this._onboardingAreaDraft = {};
+        this._onboardingAreaDraft[key] = onboardingAreaMember.checked;
+        return;
+      }
+      const onboardingNewAreaMember = ev.target.closest("[data-onboarding-new-area-member]");
+      if (onboardingNewAreaMember) {
+        const coverId = onboardingNewAreaMember.getAttribute("data-onboarding-new-area-member");
+        if (onboardingNewAreaMember.checked) this._onboardingNewAreaMembers.add(coverId);
+        else this._onboardingNewAreaMembers.delete(coverId);
         return;
       }
     }
@@ -2509,6 +2793,11 @@
         this._managedCoverNames[id] = managedName.value;
         this._managedCoverNameChanges[id] = managedName.value;
         this._queueManagedCoverSave(700);
+        return;
+      }
+      const onboardingAreaName = ev.target.closest("[data-onboarding-new-area-name]");
+      if (onboardingAreaName) {
+        this._onboardingNewAreaName = onboardingAreaName.value;
         return;
       }
       const slider = ev.target.closest("[data-slider-group]");
@@ -2631,6 +2920,7 @@
         const navId = btn.getAttribute("data-nav");
         const active =
           navId === this._view ||
+          (this._view.startsWith("onboarding") && navId === "overview") ||
           (this._view === "detail" && navId === "list") ||
           (isSettingsSubview && navId === "settings");
         btn.classList.toggle("active", active);
@@ -2649,6 +2939,10 @@
 
       if (this._view === "overview") {
         body.innerHTML = this._renderOverview();
+      } else if (this._view === "onboarding") {
+        body.innerHTML = this._renderOnboarding();
+      } else if (this._view === "onboarding-preview") {
+        body.innerHTML = this._renderOnboardingPreview();
       } else if (this._view === "list") {
         body.innerHTML = this._renderList();
       } else if (this._view === "detail") {
@@ -2684,6 +2978,19 @@
       this._mountEntityPickers(body);
       this._syncShortcutEditorFields();
       this._localizeDom();
+    }
+
+    _scrollDashboardToPreview() {
+      if (!this._dashboardPreviewScrollPending) return;
+      if (this._view !== "overview") {
+        this._dashboardPreviewScrollPending = false;
+        return;
+      }
+      if (this._globalForecast === undefined) return;
+      const timeline = this.shadowRoot.querySelector("[data-global-timeline]");
+      if (!timeline) return;
+      this._dashboardPreviewScrollPending = false;
+      timeline.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     _syncControlValues(root) {
@@ -2725,6 +3032,356 @@
         const input = el.querySelector("input");
         if (input) input.checked = this._areaAutomationAllOn(members);
       });
+    }
+
+    _renderOnboarding() {
+      const de = this._language() === "de";
+      const completed = !!(this._backendConfig && this._backendConfig.onboarding_completed);
+      const globalAutomation = this._model.globalEntities.automation;
+      const openState = this._state(globalAutomation.open && globalAutomation.open.entity_id);
+      const closeState = this._state(globalAutomation.close && globalAutomation.close.entity_id);
+      const openEnabled = openState && openState.state === "on";
+      const closeEnabled = closeState && closeState.state === "on";
+      if (completed) {
+        return `
+          <div class="onboarding" data-onboarding data-onboarding-completed>
+            <section class="onboarding-hero">
+              <div class="onboarding-eyebrow">${de ? "Smart Shutter Manager · Einrichtung" : "Smart Shutter Manager · Setup"}</div>
+              <h2>${de ? "Deine Einrichtung ist abgeschlossen." : "Your setup is complete."}</h2>
+              <p>${de ? "Du kannst den Zeitplan hier ansehen. Änderungen machst du in den Einstellungen." : "Review your schedule here. Make changes in Settings."}</p>
+            </section>
+            <div class="hint">${de ? "Öffnen ist" : "Opening automation is"} <strong>${openEnabled ? (de ? "aktiv" : "on") : (de ? "aus" : "off")}</strong> · ${de ? "Schließen ist" : "closing automation is"} <strong>${closeEnabled ? (de ? "aktiv" : "on") : (de ? "aus" : "off")}</strong>.</div>
+            <div class="onboarding-footer">
+              <button class="onboarding-action" data-onboarding-preview>${de ? "7-Tage-Vorschau öffnen" : "Open 7-day preview"}</button>
+              <button class="save-btn" data-onboarding-close>${de ? "Zur Übersicht" : "Back to overview"}</button>
+            </div>
+          </div>
+        `;
+      }
+
+      const step = this._onboardingStep || "schedule";
+      const progress = step === "schedule" ? 0 : step === "areas" ? 1 : 2;
+      const stepLabel = step === "schedule"
+        ? (de ? "Schritt 1 von 3 · Zeitplan" : "Step 1 of 3 · Schedule")
+        : step === "areas"
+          ? (de ? "Schritt 2 von 3 · Ferien und Bereiche" : "Step 2 of 3 · Holidays and areas")
+          : (de ? "Schritt 3 von 3 · Prüfen und starten" : "Step 3 of 3 · Review and start");
+      const header = `
+        <section class="onboarding-hero">
+          <div class="onboarding-eyebrow">${de ? "Smart Shutter Manager · Einrichtung" : "Smart Shutter Manager · Setup"}</div>
+          <h2>${step === "schedule"
+            ? (de ? "Wie sollen deine Rollläden laufen?" : "How should your shutters run?")
+            : step === "areas"
+              ? (de ? "Ferien und Bereiche" : "Holidays and areas")
+              : (de ? "Prüfen und bewusst starten" : "Review and start deliberately")}</h2>
+          <p>${step === "schedule"
+            ? (de ? "Trage deinen Zeitplan hier ein. Die Werte werden direkt gespeichert; die Automatik bleibt bis zum Abschluss ausgeschaltet." : "Set your schedule here. Changes save as you go; automation stays off until setup is finished.")
+            : step === "areas"
+              ? (de ? "Diese Angaben sind optional. Du kannst sie später ergänzen." : "These details are optional. You can add them later.")
+              : (de ? "Sieh dir die Vorschau an und entscheide danach getrennt für Öffnen und Schließen." : "Review the preview, then choose separately whether to enable opening and closing.")}</p>
+          <div class="onboarding-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="3" aria-valuenow="${progress}">
+            <div class="onboarding-progress-fill" style="width:${progress * 33.333}%"></div>
+          </div>
+          <p class="onboarding-progress-label">${stepLabel}</p>
+        </section>
+      `;
+
+      if (step === "schedule") {
+        const saveStatus = this._onboardingSaveStatusState();
+        return `<div class="onboarding" data-onboarding>${header}
+          ${this._renderOnboardingSchedule()}
+          ${this._onboardingError ? `<p class="onboarding-error" role="alert">${this._escapeHtml(this._onboardingError)}</p>` : ""}
+          <div class="onboarding-step-actions">
+            <div class="meta" data-onboarding-save-status role="${saveStatus.role}" aria-live="${saveStatus.live}" aria-atomic="true">${this._escapeHtml(saveStatus.text)}</div>
+            <button class="save-btn" data-onboarding-next ${this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors).length ? "disabled" : ""}>${de ? "Weiter: Ferien und Bereiche" : "Next: holidays and areas"}</button>
+          </div>
+        </div>`;
+      }
+
+      if (step === "areas") {
+        return `<div class="onboarding" data-onboarding>${header}
+          ${this._renderOnboardingAreas()}
+          ${this._onboardingError ? `<p class="onboarding-error" role="alert">${this._escapeHtml(this._onboardingError)}</p>` : ""}
+          <div class="onboarding-step-actions">
+            <button class="onboarding-action" data-onboarding-back>${de ? "Zurück zum Zeitplan" : "Back to schedule"}</button>
+            <div class="onboarding-step-actions-end">
+              <button class="onboarding-action" data-onboarding-skip-areas>${de ? "Überspringen" : "Skip for now"}</button>
+              <button class="save-btn" data-onboarding-save-areas>${de ? "Speichern und Vorschau" : "Save and preview"}</button>
+            </div>
+          </div>
+          <p class="onboarding-error" data-onboarding-area-error role="alert" hidden></p>
+        </div>`;
+      }
+
+      const previewReviewed = this._onboardingPreviewReviewed;
+      return `
+        <div class="onboarding" data-onboarding>${header}
+          <section class="onboarding-activation">
+            <h3>${de ? "Automatik bewusst freigeben" : "Choose what to enable"}</h3>
+            <p>${de ? "Die Vorschau wurde geprüft. Wähle Öffnen und Schließen getrennt; nicht ausgewählte Richtungen bleiben ausgeschaltet." : "You reviewed the preview. Choose opening and closing separately; any direction left unchecked stays disabled."}</p>
+            <div class="onboarding-choices">
+              <label class="onboarding-choice"><input type="checkbox" data-onboarding-enable="open" ${openEnabled ? "checked" : ""}><span>${de ? "Automatik Öffnen" : "Opening automation"}</span></label>
+              <label class="onboarding-choice"><input type="checkbox" data-onboarding-enable="close" ${closeEnabled ? "checked" : ""}><span>${de ? "Automatik Schließen" : "Closing automation"}</span></label>
+            </div>
+          </section>
+          <div class="onboarding-step-actions">
+            <button class="onboarding-action" data-onboarding-edit-schedule>${de ? "Zeitplan ändern" : "Edit schedule"}</button>
+            <div class="onboarding-step-actions-end">
+              <button class="onboarding-action" data-onboarding-preview>${de ? "Vorschau erneut ansehen" : "Review preview again"}</button>
+              <button class="save-btn" data-onboarding-finish ${!previewReviewed || this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors).length ? "disabled" : ""}>${de ? "Einrichtung abschließen" : "Finish setup"}</button>
+            </div>
+            ${!previewReviewed ? `<p class="onboarding-error" role="alert">${de ? "Bitte prüfe zuerst die Vorschau." : "Review the preview before finishing setup."}</p>` : ""}
+            ${this._onboardingError ? `<p class="onboarding-error" role="alert">${this._escapeHtml(this._onboardingError)}</p>` : ""}
+          </div>
+        </div>
+      `;
+    }
+
+    _renderOnboardingSchedule() {
+      const de = this._language() === "de";
+      const entities = this._model.globalEntities;
+      const openState = this._state(entities.localType.open && entities.localType.open.entity_id);
+      const closeState = this._state(entities.localType.close && entities.localType.close.entity_id);
+      const openIsTime = !openState || openState.state === "time";
+      const closeIsTime = !closeState || closeState.state === "time";
+      const profileCards = STATIC_PROFILE_ORDER.map((profileId) => {
+        const profileTimes = entities.profileTime[profileId] || {};
+        const open = profileTimes.open;
+        const close = profileTimes.close;
+        return `
+          <article class="onboarding-profile-card">
+            <h4>${this._profileStateLabel(profileId)}</h4>
+            <div class="onboarding-profile-times">
+              <label>${de ? "Öffnen" : "Open"}${open
+                ? `<input type="time" data-time-entity="${open.entity_id}" data-onboarding-field aria-label="${this._profileStateLabel(profileId)} · ${de ? "Öffnen" : "Open"}" ${openIsTime ? "" : "disabled"}>`
+                : `<span class="empty">${de ? "Nicht verfügbar" : "Unavailable"}</span>`}</label>
+              <label>${de ? "Schließen" : "Close"}${close
+                ? `<input type="time" data-time-entity="${close.entity_id}" data-onboarding-field aria-label="${this._profileStateLabel(profileId)} · ${de ? "Schließen" : "Close"}" ${closeIsTime ? "" : "disabled"}>`
+                : `<span class="empty">${de ? "Nicht verfügbar" : "Unavailable"}</span>`}</label>
+            </div>
+          </article>
+        `;
+      }).join("");
+      return `
+        <section class="onboarding-form-card">
+          <h3>${de ? "Auslöser für Öffnen und Schließen" : "Opening and closing triggers"}</h3>
+          <p class="meta">${de ? "Wähle je Richtung eine feste Uhrzeit oder den passenden Sonnenstand." : "Choose a fixed time or the matching solar event for each direction."}</p>
+          <div class="onboarding-trigger-grid">
+            <div class="onboarding-trigger-option" data-onboarding-trigger="open">
+              ${this._renderSelect(entities.localType.open, de ? "Öffnen" : "Open", "data-type-select data-onboarding-field")}
+              ${!openIsTime ? `<div class="onboarding-trigger-offset" data-onboarding-offset-for="open">${this._renderNumberSlider(entities.sunOffset.open, de ? "Versatz ab Sonnenaufgang" : "Offset from sunrise", " min", "data-onboarding-field")}</div>` : ""}
+            </div>
+            <div class="onboarding-trigger-option" data-onboarding-trigger="close">
+              ${this._renderSelect(entities.localType.close, de ? "Schließen" : "Close", "data-type-select data-onboarding-field")}
+              ${!closeIsTime ? `<div class="onboarding-trigger-offset" data-onboarding-offset-for="close">${this._renderNumberSlider(entities.sunOffset.close, de ? "Versatz ab Sonnenuntergang" : "Offset from sunset", " min", "data-onboarding-field")}</div>` : ""}
+            </div>
+          </div>
+        </section>
+        <section class="onboarding-form-card">
+          <h3>${de ? "Uhrzeiten je Tagestyp" : "Times by day type"}</h3>
+          <p class="meta">${de ? "Diese Zeiten gelten, wenn für die Richtung eine feste Uhrzeit gewählt ist." : "These times apply when a direction uses a fixed time."}</p>
+          <div class="onboarding-profile-grid">${profileCards}</div>
+        </section>
+        <section class="onboarding-form-card">
+          <h3>${de ? "Zielpositionen" : "Target positions"}</h3>
+          <p class="meta">${de ? "Lege fest, wie weit die Rollläden automatisch fahren sollen." : "Choose how far shutters move automatically."}</p>
+          <div class="onboarding-position-grid">
+            ${this._renderNumberSlider(entities.position.open, de ? "Position beim Öffnen" : "Position when opening", "%", "data-onboarding-field")}
+            ${this._renderNumberSlider(entities.position.close, de ? "Position beim Schließen" : "Position when closing", "%", "data-onboarding-field")}
+          </div>
+        </section>
+      `;
+    }
+
+    _renderOnboardingAreas() {
+      const de = this._language() === "de";
+      const basic = (this._backendConfig && this._backendConfig.basic_settings) || {};
+      const areas = (this._backendConfig && this._backendConfig.custom_areas) || [];
+      const shutterAreas = (this._backendConfig && this._backendConfig.shutter_areas) || {};
+      const covers = this._model.shutters || [];
+      const areaCards = areas.map((area) => `
+        <section class="onboarding-area-card">
+          <h4>${this._escapeHtml(area.name || area.id)}</h4>
+          <div class="onboarding-area-members">
+            ${covers.map((shutter) => {
+              const key = `${area.id}::${shutter.coverEntityId}`;
+              const selected = this._onboardingAreaDraft && Object.prototype.hasOwnProperty.call(this._onboardingAreaDraft, key)
+                ? this._onboardingAreaDraft[key]
+                : ((shutterAreas[shutter.coverEntityId] || []).includes(area.id));
+              return `<label class="onboarding-choice"><input type="checkbox" data-onboarding-area-member data-onboarding-area-id="${this._escapeHtml(area.id)}" data-onboarding-area-cover="${this._escapeHtml(shutter.coverEntityId)}" ${selected ? "checked" : ""}><span>${this._escapeHtml(shutter.name)}</span></label>`;
+            }).join("")}
+          </div>
+        </section>
+      `).join("");
+      const newAreaMembers = this._onboardingNewAreaMembers || new Set();
+      return `
+        <section class="onboarding-form-card">
+          <h3>${de ? "Ferienprofil" : "Holiday profile"}</h3>
+          <p class="meta">${de ? "Optional: Wähle eine Entität, die Home Assistant für Feiertage oder Ferien verwendet." : "Optional: choose the entity Home Assistant uses to indicate holidays."}</p>
+          ${this._entityPickerField("onboarding_holiday", de ? "Ferien-Entität" : "Holiday entity", basic.holiday_entity, ["binary_sensor", "input_boolean", "calendar"], "data-onboarding-holiday")}
+        </section>
+        <section class="onboarding-form-card">
+          <h3>${de ? "Rollläden Bereichen zuordnen" : "Assign shutters to areas"}</h3>
+          <p class="meta">${de ? "Gruppiere Rollläden nach Etage oder Fassadenseite. Mehrere Bereiche pro Rollladen sind möglich; du kannst diesen Schritt überspringen." : "Group shutters by floor or side of the house. Shutters can belong to multiple areas; you can skip this step."}</p>
+          ${areaCards || `<p class="empty">${de ? "Noch keine Bereiche angelegt. Du kannst unten einen Bereich erstellen oder diesen Schritt überspringen." : "No areas yet. Create one below or skip this step."}</p>`}
+          <details class="onboarding-new-area" data-onboarding-new-area>
+            <summary>${de ? "Neuen Bereich erstellen" : "Create a new area"}</summary>
+            <label>${de ? "Name des Bereichs" : "Area name"}<input type="text" data-onboarding-new-area-name value="${this._escapeHtml(this._onboardingNewAreaName || "")}" maxlength="60" placeholder="${de ? "z. B. Erdgeschoss" : "e.g. Ground floor"}"></label>
+            <div class="onboarding-area-members">
+              ${covers.map((shutter) => `<label class="onboarding-choice"><input type="checkbox" data-onboarding-new-area-member="${this._escapeHtml(shutter.coverEntityId)}" ${newAreaMembers.has(shutter.coverEntityId) ? "checked" : ""}><span>${this._escapeHtml(shutter.name)}</span></label>`).join("")}
+            </div>
+          </details>
+        </section>
+      `;
+    }
+
+    async _saveOnboardingAreasAndPreview() {
+      const body = this.shadowRoot.querySelector(".body");
+      const button = body && body.querySelector("[data-onboarding-save-areas]");
+      if (!body || !button || button.disabled) return;
+      button.disabled = true;
+      const errorEl = body.querySelector("[data-onboarding-area-error]");
+      if (errorEl) errorEl.hidden = true;
+      this._onboardingNewAreaName = (body.querySelector("[data-onboarding-new-area-name]")?.value || "").trim();
+      try {
+        const newAreaName = this._onboardingNewAreaName;
+        const newAreaMembers = [...(this._onboardingNewAreaMembers || [])];
+        if (!newAreaName && newAreaMembers.length) {
+          throw new Error(this._language() === "de"
+            ? "Gib einen Namen für den neuen Bereich ein."
+            : "Enter a name for the new area.");
+        }
+        if (newAreaName && !newAreaMembers.length) {
+          throw new Error(this._language() === "de"
+            ? "Wähle mindestens einen Rollladen für den neuen Bereich."
+            : "Choose at least one shutter for the new area.");
+        }
+
+        const holidaySlot = body.querySelector('[data-entity-picker][data-picker-attr="data-onboarding-holiday"]');
+        const holidayEntity = holidaySlot ? (holidaySlot.getAttribute("data-value") || "").trim() : "";
+        const entryId = this._backendConfig && this._backendConfig.entry_id;
+        const basicResult = await this._hass.callWS({
+          type: "smart_shutter/save_basic_settings",
+          ...(entryId ? { entry_id: entryId } : {}),
+          holiday_entity: holidayEntity || null,
+        });
+        if (basicResult && basicResult.success === false) throw new Error(basicResult.message || "Could not save holiday settings.");
+
+        const areas = [...((this._backendConfig && this._backendConfig.custom_areas) || [])];
+        let newAreaId = null;
+        if (newAreaName) {
+          newAreaId = this._onboardingNewAreaId;
+          if (!newAreaId) {
+            do {
+              newAreaId = `area_${Math.random().toString(16).slice(2, 10)}`;
+            } while (areas.some((area) => area.id === newAreaId));
+            this._onboardingNewAreaId = newAreaId;
+          }
+          const existing = areas.find((area) => area.id === newAreaId);
+          if (existing) existing.name = newAreaName;
+          else areas.push({ id: newAreaId, name: newAreaName, assigned_ha_user_ids: [] });
+          const areaResult = await this._hass.callWS({
+            type: "smart_shutter/save_custom_areas",
+            ...(entryId ? { entry_id: entryId } : {}),
+            areas,
+          });
+          if (areaResult && areaResult.success === false) throw new Error(areaResult.message || "Could not save area.");
+        }
+
+        const shutterAreas = { ...((this._backendConfig && this._backendConfig.shutter_areas) || {}) };
+        const updateMembership = (coverId, areaId, selected) => {
+          const raw = shutterAreas[coverId];
+          const current = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+          const next = current.filter((id) => id !== areaId);
+          if (selected) next.push(areaId);
+          if (next.length) shutterAreas[coverId] = next;
+          else delete shutterAreas[coverId];
+        };
+        for (const [key, selected] of Object.entries(this._onboardingAreaDraft || {})) {
+          const separator = key.indexOf("::");
+          if (separator < 0) continue;
+          updateMembership(key.slice(separator + 2), key.slice(0, separator), selected);
+        }
+        if (newAreaId) {
+          for (const coverId of this._onboardingNewAreaMembers || []) updateMembership(coverId, newAreaId, true);
+        }
+        const hasAreaChanges = newAreaId || Object.keys(this._onboardingAreaDraft || {}).length;
+        if (hasAreaChanges) {
+          const areaResult = await this._hass.callWS({
+            type: "smart_shutter/save_shutter_areas",
+            ...(entryId ? { entry_id: entryId } : {}),
+            shutter_areas: shutterAreas,
+          });
+          if (areaResult && areaResult.success === false) throw new Error(areaResult.message || "Could not save area assignments.");
+        }
+
+        await this._loadBackendConfig();
+        this._onboardingAreaDraft = null;
+        this._onboardingNewAreaId = null;
+        this._onboardingNewAreaName = "";
+        this._onboardingNewAreaMembers = new Set();
+        this._onboardingStep = "review";
+        this._onboardingPreviewReturnStep = "areas";
+        this._onboardingGlobalForecast = undefined;
+        this._onboardingForecastError = false;
+        this._view = "onboarding-preview";
+        this._render();
+      } catch (err) {
+        if (errorEl) {
+          errorEl.textContent = `${this._language() === "de" ? "Speichern fehlgeschlagen" : "Could not save"}: ${err && err.message ? err.message : String(err)}`;
+          errorEl.hidden = false;
+        }
+        button.disabled = false;
+      }
+    }
+
+    _renderOnboardingPreview() {
+      const de = this._language() === "de";
+      const previewReady = this._onboardingGlobalForecast !== undefined && !this._onboardingForecastError;
+      return `
+        <div class="onboarding" data-onboarding-preview-view>
+          <button class="back" data-onboarding-close-preview><ha-icon icon="mdi:arrow-left"></ha-icon>${de ? "Zurück zur Einrichtung" : "Back to setup"}</button>
+          <section class="onboarding-hero">
+            <div class="onboarding-eyebrow">${de ? "Schritt 3 · Vorschau" : "Step 3 · Preview"}</div>
+            <h2>${de ? "Was ist für die nächsten Tage geplant?" : "What is planned for the next few days?"}</h2>
+            <p>${de
+              ? "Prüfe die Zeiten und betroffenen Rollläden. Die Vorschau berücksichtigt auch ausgeschaltete Richtungen und löst keine Bewegung aus."
+              : "Review the times and affected shutters. The preview includes disabled directions and does not trigger movement."}</p>
+          </section>
+          <div class="ssm-card ssm-timeline-card">${this._renderGlobalTimeline(true)}</div>
+          <button class="save-btn" data-onboarding-preview-reviewed ${previewReady ? "" : "disabled"}>${de ? "Vorschau geprüft" : "I reviewed the preview"}</button>
+        </div>
+      `;
+    }
+
+    async _completeOnboarding() {
+      if (!this._onboardingPreviewReviewed || this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors).length) return;
+      const body = this.shadowRoot.querySelector(".body");
+      const button = body && body.querySelector("[data-onboarding-finish]");
+      if (button) button.disabled = true;
+      this._onboardingError = null;
+      try {
+        const automation = this._model && this._model.globalEntities.automation;
+        for (const action of ["open", "close"]) {
+          const entity = automation && automation[action];
+          if (!entity) throw new Error("Global automation switch is unavailable.");
+          const control = body.querySelector(`[data-onboarding-enable="${action}"]`);
+          await this._hass.callService("switch", control && control.checked ? "turn_on" : "turn_off", {
+            entity_id: entity.entity_id,
+          });
+        }
+        const entryId = this._backendConfig && this._backendConfig.entry_id;
+        await this._hass.callWS({
+          type: "smart_shutter/complete_onboarding",
+          ...(entryId ? { entry_id: entryId } : {}),
+        });
+        this._backendConfig.onboarding_completed = true;
+        this._view = "overview";
+        this._render();
+      } catch (err) {
+        this._onboardingError = `${this._language() === "de" ? "Einrichtung konnte nicht gespeichert werden" : "Could not finish setup"}: ${err && err.message ? err.message : String(err)}`;
+        this._render();
+      }
     }
 
     _overviewStatsHtml() {
@@ -2947,19 +3604,28 @@
       `;
     }
 
-    _renderGlobalTimeline() {
+    _renderGlobalTimeline(includeDisabled = false) {
       const shutters = this._model.shutters;
       const days = 7;
+      const forecast = includeDisabled ? this._onboardingGlobalForecast : this._globalForecast;
 
-      if (this._globalForecast === undefined) {
-        this._loadGlobalForecast(days);
+      if (includeDisabled && this._onboardingForecastError) {
+        this._globalTimelineGroups = [];
+        return `<div class="error" role="alert" data-onboarding-preview-error>
+          ${this._language() === "de" ? "Die Vorschau konnte nicht geladen werden." : "The preview could not be loaded."}
+          <button class="link-btn" data-onboarding-preview-retry>${this._language() === "de" ? "Erneut versuchen" : "Try again"}</button>
+        </div>`;
+      }
+
+      if (forecast === undefined) {
+        this._loadGlobalForecast(days, includeDisabled);
         this._globalTimelineGroups = [];
         return `<p class="empty">Loading forecast ...</p>`;
       }
 
       const events = [];
       for (const s of shutters) {
-        const entries = this._globalForecast[s.coverEntityId] || [];
+        const entries = forecast[s.coverEntityId] || [];
         entries.forEach((entry) => {
           const ts = Date.parse(entry.ts);
           if (!isNaN(ts)) {
@@ -3244,17 +3910,17 @@
       `;
     }
 
-    _renderTimeInput(entry, label) {
+    _renderTimeInput(entry, label, extraAttr = "") {
       if (!entry) return `<div class="control-row"><label>${label}</label><span class="empty">not configured</span></div>`;
       return `
         <div class="control-row">
           <label>${label}</label>
-          <input type="time" data-time-entity="${entry.entity_id}" />
+          <input type="time" data-time-entity="${entry.entity_id}" ${extraAttr} />
         </div>
       `;
     }
 
-    _renderNumberSlider(entry, label, unit) {
+    _renderNumberSlider(entry, label, unit, extraAttr = "") {
       if (!entry) return "";
       const st = this._state(entry.entity_id);
       // Nullish instead of truthy object check: attributes can be (still)
@@ -3271,9 +3937,9 @@
         <div class="control-row">
           <label>${label}</label>
           <input type="range" min="${min}" max="${max}" step="${step}"
-                 data-number-entity="${entry.entity_id}" data-slider-group="${entry.entity_id}" />
+                 data-number-entity="${entry.entity_id}" data-slider-group="${entry.entity_id}" ${extraAttr} />
           <input type="number" min="${min}" max="${max}" step="${step}"
-                 class="number-exact" data-number-entity="${entry.entity_id}" data-slider-group="${entry.entity_id}" />
+                 class="number-exact" data-number-entity="${entry.entity_id}" data-slider-group="${entry.entity_id}" ${extraAttr} />
           <span class="unit">${unit || ""}</span>
         </div>
       `;
@@ -3344,17 +4010,31 @@
       this._render();
     }
 
-    async _loadGlobalForecast(days = 7) {
-      if (this._globalForecastLoading) return;
-      this._globalForecastLoading = true;
+    async _loadGlobalForecast(days = 7, includeDisabled = false) {
+      const loadingKey = includeDisabled ? "_onboardingForecastLoading" : "_globalForecastLoading";
+      if (this[loadingKey]) return;
+      this[loadingKey] = true;
       try {
-        const result = await this._hass.callWS({ type: "smart_shutter/get_forecast", days });
-        this._globalForecast = (result && result.forecast) || {};
+        const result = await this._hass.callWS({
+          type: "smart_shutter/get_forecast", days, include_disabled: includeDisabled,
+          ...(this._backendConfig && this._backendConfig.entry_id ? { entry_id: this._backendConfig.entry_id } : {}),
+        });
+        const forecast = (result && result.forecast) || {};
+        if (includeDisabled) {
+          this._onboardingGlobalForecast = forecast;
+          this._onboardingForecastError = false;
+        }
+        else this._globalForecast = forecast;
       } catch (err) {
-        this._globalForecast = {};
+        if (includeDisabled) {
+          this._onboardingGlobalForecast = undefined;
+          this._onboardingForecastError = true;
+        }
+        else this._globalForecast = {};
       }
-      this._globalForecastLoading = false;
+      this[loadingKey] = false;
       this._render();
+      if (!includeDisabled) requestAnimationFrame(() => this._scrollDashboardToPreview());
     }
 
     // After every action that can change future dates (Bulk-/
@@ -3363,6 +4043,8 @@
     // outdated dates up to the next full reload of the map.
     _invalidateForecastCache() {
       this._globalForecast = undefined;
+      this._onboardingGlobalForecast = undefined;
+      this._onboardingForecastError = false;
       this._forecastByShutter = undefined;
     }
 
@@ -4063,6 +4745,10 @@
         <h2>Settings</h2>
         ${backendError}
         <div class="settings-menu">
+          ${this._isAdmin() ? `<button class="settings-menu-item" data-settings-nav="onboarding">
+            <ha-icon icon="mdi:clipboard-check-outline"></ha-icon>
+            <div><div class="name">${this._language() === "de" ? "Einrichtungsleitfaden" : "Setup guide"}</div><div class="meta">${this._language() === "de" ? "Zeitplan und Automatik jederzeit prüfen" : "Review schedules and automation at any time"}</div></div>
+          </button>` : ""}
           ${this._isAdmin() ? `<button class="settings-menu-item" data-settings-nav="settings-shutters">
             <ha-icon icon="mdi:window-shutter-cog"></ha-icon>
             <div><div class="name">${this._language() === "de" ? "Rollläden verwalten" : "Manage shutters"}</div>

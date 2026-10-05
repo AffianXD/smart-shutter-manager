@@ -138,6 +138,13 @@ check(
     "Deaktivierte globale Automatik -> compute_forecast liefert keine 'open'-Termine",
     all(action != "open" for action, _ in forecast_disabled),
 )
+forecast_disabled_preview = scheduler.compute_forecast(
+    None, coordinator2, shutter2, days=7, now=now, include_disabled=True
+)
+check(
+    "Setup-Vorschau zeigt den Zeitplan auch bei deaktivierter Automatik",
+    len([action for action, _ in forecast_disabled_preview if action == "open"]) == 7,
+)
 
 # Regressionstest: heute bereits vergangene Termine duerfen NICHT aus
 # der Vorhersage verschwinden (Bugreport - siehe README Changelog).
