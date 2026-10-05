@@ -591,6 +591,7 @@ async function main() {
   });
   await page.waitForTimeout(100);
   await page.evaluate(() => {
+    document.getElementById("card").shadowRoot.querySelector('[data-settings-nav="settings-exceptions"]').click();
     document.getElementById("card").shadowRoot.querySelector('[data-settings-nav="settings-schedules"]').click();
   });
   await page.waitForTimeout(100);

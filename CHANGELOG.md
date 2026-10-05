@@ -15,6 +15,14 @@
 - Cover native restoration, DST gaps/folds, individual inheritance, disabled
   behavior, and card interactions with simulated covers.
 
+## Unreleased: v0.22.1
+
+- Show date-based exceptions in collapsible settings and per-shutter Advanced
+  lists. Keep up to ten most recently expired entries available to reactivate,
+  restarting the original inclusive date range from today.
+- Prune older expired entries at Home Assistant local midnight and while
+  loading configuration, so the visible history stays in sync after rollover.
+
 ## Unreleased: v0.22.0
 
 - Add admin-only "Manage shutters" to the Smart Shutter settings menu and

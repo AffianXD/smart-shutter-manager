@@ -177,6 +177,8 @@ SUN_OFFSET_DEFAULT = 0
 # a local time can be overwritten, see "{action}_{profile}_time_source").
 # Custom Profiles intentionally support ONLY fixed times (no solar position).
 CONF_CUSTOM_SCHEDULES = "custom_schedules"  # list[dict], see structure below
+CONF_TEMPORAL_EXCEPTIONS = "temporal_exceptions"  # inclusive local dates; independent of profiles
+MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS = 10
 CONF_SHUTTER_NOTES = "shutter_notes"  # dict[cover_entity_id, str] - see coordinator.get_shutter_note()
 
 # Structure of a Custom Schedule entry (dict, JSON-serializable):

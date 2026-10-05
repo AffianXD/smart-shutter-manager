@@ -544,6 +544,11 @@
   }
 
   class SmartShutterCard extends HTMLElement {
+    constructor() {
+      super();
+      this._temporalDateCheckInterval = null;
+    }
+
     setConfig(config) {
       this._config = config || {};
       this._view = "overview"; // overview | list | detail | settings
@@ -570,6 +575,7 @@
       this._sunDirectionOverride = undefined;
       this._bulkEditMode = false;
       this._bulkSelection = new Set();
+      this._lastTemporalDate = null;
       this._loaded = false;
       this._loadError = null;
       this._model = null;
@@ -603,9 +609,14 @@
     connectedCallback() {
       this._subscribeDeviceRegistry();
       this._subscribeSeasonRegistry();
+      this._startTemporalDateCheck();
     }
 
     disconnectedCallback() {
+      if (this._temporalDateCheckInterval !== null) {
+        clearInterval(this._temporalDateCheckInterval);
+        this._temporalDateCheckInterval = null;
+      }
       this._stopDeviceRegistrySubscription();
       this._deviceRegistryConnection = null;
       this._stopSeasonRegistrySubscription();
@@ -679,6 +690,11 @@
       } catch (err) {
         if (this._seasonRegistryConnection === connection) this._seasonRegistryConnection = null;
       }
+    }
+
+    _startTemporalDateCheck() {
+      if (this._temporalDateCheckInterval !== null) return;
+      this._temporalDateCheckInterval = window.setInterval(() => this._checkTemporalExceptionDate(), 60_000);
     }
 
     async _refreshDeviceNames() {
@@ -821,6 +837,7 @@
       // deviates from the actual option.
       try {
         this._backendConfig = await this._hass.callWS({ type: "smart_shutter/get_config" });
+        this._lastTemporalDate = this._exceptionToday();
         this._backendError = null;
       } catch (err) {
         this._backendConfig = null;
@@ -1403,6 +1420,9 @@
       `;
       this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
       this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
+      this.shadowRoot.addEventListener("submit", (ev) => {
+        if (ev.target.matches("[data-exception-form]")) { ev.preventDefault(); this._saveException(); }
+      });
       this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
       this.shadowRoot.addEventListener("dragstart", (ev) => this._onDragStart(ev));
       this.shadowRoot.addEventListener("dragover", (ev) => this._onDragOver(ev));
@@ -1749,6 +1769,10 @@
         .managed-cover-row .control-row span { flex: 1; min-width: 0; }
         .managed-cover-row input[type="checkbox"] { flex-shrink: 0; margin-top: 3px; }
         .form-field textarea { min-height: 60px; resize: vertical; }
+        [data-exception-form] fieldset { min-width: 0; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); }
+        [data-exception-form] input[type="checkbox"], [data-exception-form] input[type="radio"] { width: auto; margin-right: 7px; }
+        [data-exception-form] label { overflow-wrap: anywhere; }
+        [data-exception-mode-fields][hidden] { display: none; }
         .form-field .meta, .meta { font-size: 0.8em; color: var(--ssm-muted); margin-top: 4px; }
         .save-btn {
           padding: 11px 22px; border: 1px solid var(--primary-color); border-radius: var(--ssm-radius-sm); cursor: pointer;
@@ -1930,6 +1954,34 @@
     }
 
     _onClick(ev) {
+      const exceptionEdit = ev.target.closest("[data-exception-edit]");
+      if (exceptionEdit) {
+        this._exceptionReturnView = this._view;
+        const id = exceptionEdit.getAttribute("data-exception-edit");
+        this._editingExceptionId = id === "__new__" ? null : id;
+        this._exceptionReactivating = exceptionEdit.hasAttribute("data-exception-reactivate");
+        this._exceptionPrefillCover = exceptionEdit.getAttribute("data-exception-cover");
+        this._exceptionPrefillArea = exceptionEdit.getAttribute("data-exception-area");
+        this._exceptionReturnCover = exceptionEdit.getAttribute("data-exception-return-cover") || this._exceptionPrefillCover;
+        this._view = "settings-exception-edit";
+        this._render();
+        return;
+      }
+      if (ev.target.closest("[data-exception-back]")) {
+        this._exceptionReactivating = false;
+        this._view = this._exceptionReturnView || "settings-exceptions";
+        this._render();
+        return;
+      }
+      if (ev.target.closest("[data-save-exception]")) {
+        this._saveException();
+        return;
+      }
+      const exceptionDelete = ev.target.closest("[data-exception-delete]");
+      if (exceptionDelete) {
+        this._deleteException(exceptionDelete.getAttribute("data-exception-delete"));
+        return;
+      }
       const navBtn = ev.target.closest("[data-nav]");
       if (navBtn) {
         this._haptic("selection");
@@ -2411,6 +2463,12 @@
         }
         return;
       }
+      if (ev.target.matches("[data-exception-field=mode]")) {
+        this.shadowRoot.querySelectorAll("[data-exception-mode-fields]").forEach((fields) => {
+          fields.hidden = fields.getAttribute("data-exception-mode-fields") !== ev.target.value;
+        });
+        return;
+      }
       const managedCover = ev.target.closest("[data-managed-cover]");
       if (managedCover) {
         const id = managedCover.getAttribute("data-managed-cover");
@@ -2583,6 +2641,11 @@
       });
       const body = this.shadowRoot.querySelector(".body");
       if (!body) return;
+      this._checkTemporalExceptionDate();
+      body.querySelectorAll("[data-exception-status]").forEach((el) => {
+        const rule = ((this._backendConfig || {}).temporal_exceptions || []).find((r) => r.id === el.getAttribute("data-exception-status"));
+        if (rule) el.textContent = this._exceptionStatus(rule);
+      });
       body.querySelectorAll("[data-shutter-name]").forEach((el) => {
         const shutter = this._shutterByDeviceId(el.getAttribute("data-shutter-name"));
         if (shutter) el.textContent = shutter.name;
@@ -2661,6 +2724,10 @@
         body.innerHTML = this._renderSettingsBasic();
       } else if (this._view === "settings-schedules") {
         body.innerHTML = this._renderSettingsSchedules();
+      } else if (this._view === "settings-exceptions") {
+        body.innerHTML = this._renderSettingsExceptions();
+      } else if (this._view === "settings-exception-edit") {
+        body.innerHTML = this._renderExceptionEdit();
       } else if (this._view === "settings-schedule-edit") {
         body.innerHTML = this._renderScheduleEdit();
       } else if (this._view === "settings-triggers") {
@@ -3384,6 +3451,7 @@
         "Vorwarnung gesendet": "Warning sent",
         "Vom Nutzer übersprungen": "Skipped by user",
         "Automatik pausiert (manueller Eingriff)": "Automation paused (manual intervention)",
+        "Automatik pausiert (zeitliche Ausnahme)": "Automation paused (date exception)",
         "Frostschutz aktiv": "Frost protection active",
         "Globale Automatik aus": "Global automation disabled",
         "Individuelle Automatik aus": "Individual automation disabled",
@@ -3728,14 +3796,9 @@
         </div>
       `;
 
-      const notifications = (this._backendConfig && this._backendConfig.shutter_notifications) || {};
-      html += this._renderNotificationSettings(notifications[s.coverEntityId] || {}, s.coverEntityId);
-
       if (mode === "global") {
-        // Only read-only summary - no detail sliders,
-        // those that would have no effect anyway (see scheduler.py: at
-        // Source=Global exclusively uses the global entities
-        // evaluated).
+        // Keep the inherited summary close to the mode selector, before the
+        // lower-priority notification and schedule sections.
         const ge = this._seasonEntities(this._model.globalEntities);
         html += `<h3>Inherited from global</h3>`;
         html += `<table>
@@ -3744,7 +3807,12 @@
           <tr><td>Sun offset</td><td>${this._globalValueText(ge.sunOffset.open, " min")}</td><td>${this._globalValueText(ge.sunOffset.close, " min")}</td></tr>
           <tr><td>Target Position</td><td>${this._globalValueText(ge.position.open, "%")}</td><td>${this._globalValueText(ge.position.close, "%")}</td></tr>
         </table>`;
-      } else {
+      }
+
+      const notifications = (this._backendConfig && this._backendConfig.shutter_notifications) || {};
+      html += this._renderNotificationSettings(notifications[s.coverEntityId] || {}, s.coverEntityId);
+
+      if (mode !== "global") {
         html += `<h3>Trigger Type (Time / Solar Position)</h3>`;
         html += this._renderSelect(e.sourceSelect.open, "Öffnen-Quelle (Typ/Sonnenversatz)", "data-type-select");
         const openSourceState = this._state(e.sourceSelect.open && e.sourceSelect.open.entity_id);
@@ -3834,6 +3902,7 @@
         }
       }
 
+      html += this._renderExceptionSection(s.coverEntityId, null, { collapsible: true });
       html += this._renderEmbeddedSchedulesAndTriggers(s);
       return html;
     }
@@ -4056,6 +4125,9 @@
               <ha-icon icon="mdi:compass-outline"></ha-icon>
               <div><div class="name">My Area</div><div class="meta">Times, Sun Position Rule, Frost Protection for your area</div></div>
             </button>
+            <button class="settings-menu-item" data-settings-nav="settings-exceptions">
+              <ha-icon icon="mdi:calendar-range"></ha-icon><div class="name">${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</div>
+            </button>
           </div>
         `;
       }
@@ -4072,9 +4144,9 @@
             <ha-icon icon="mdi:cog"></ha-icon>
             <div><div class="name">Basic Settings</div><div class="meta">Holiday/Frost Entity, Notifications</div></div>
           </button>
-          <button class="settings-menu-item" data-settings-nav="settings-schedules">
+          <button class="settings-menu-item" data-settings-nav="settings-exceptions">
             <ha-icon icon="mdi:calendar-clock"></ha-icon>
-            <div><div class="name">Custom profiles</div><div class="meta">Manage Recurring Time Exceptions</div></div>
+            <div><div class="name">${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</div><div class="meta">${this._exceptionText("Automatik pausieren oder Fahrzeiten für einen Zeitraum ändern", "Pause automation or change times for a date range")}</div></div>
           </button>
           <button class="settings-menu-item" data-settings-nav="settings-triggers">
             <ha-icon icon="mdi:remote"></ha-icon>
@@ -4836,6 +4908,7 @@
       } // Ende frostSection.isOpen
 
       if (existing) {
+        html += this._renderExceptionSection(null, existing.id, { collapsible: true });
         // v0.19: own, private schedule profiles for THIS area -
         // editable for Admin AND Guest (see FEAT "Guests should be able to edit everything
         // for their area can be set"). Deliberately separated from
@@ -4942,11 +5015,257 @@
       return html;
     }
 
+    _exceptionText(de, en) {
+      return this._language() === "de" ? de : en;
+    }
+
+    _exceptionToday() {
+      const timeZone = this._hass.config && this._hass.config.time_zone;
+      const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+      const value = (type) => parts.find((part) => part.type === type).value;
+      return `${value("year")}-${value("month")}-${value("day")}`;
+    }
+
+    _checkTemporalExceptionDate() {
+      if (!this._hass) return;
+      const today = this._exceptionToday();
+      if (today === this._lastTemporalDate) return;
+      this._lastTemporalDate = today;
+      if (this._backendConfig) this._refreshTemporalExceptions(today);
+    }
+
+    async _refreshTemporalExceptions(expectedDate) {
+      try {
+        const config = await this._hass.callWS({ type: "smart_shutter/get_config" });
+        if (!this._backendConfig) return;
+        this._backendConfig = {
+          ...this._backendConfig,
+          temporal_exceptions: config.temporal_exceptions || [],
+          expired_exception_limit: config.expired_exception_limit || 10,
+        };
+        if (expectedDate !== this._exceptionToday()) {
+          this._lastTemporalDate = null;
+          this._checkTemporalExceptionDate();
+          return;
+        }
+        const body = this.shadowRoot.querySelector(".body");
+        if (!body) return;
+        body.querySelectorAll("[data-temporal-exception-section]").forEach((section) => {
+          const coverId = section.getAttribute("data-temporal-cover") || null;
+          const areaId = section.getAttribute("data-temporal-area") || null;
+          const collapsible = section.getAttribute("data-temporal-collapsible") === "true";
+          const framed = section.getAttribute("data-temporal-framed") === "true";
+          const template = document.createElement("template");
+          template.innerHTML = this._renderExceptionSection(coverId, areaId, { collapsible, framed });
+          section.replaceWith(template.content.firstElementChild);
+        });
+      } catch (err) {
+        if (this._lastTemporalDate === expectedDate) this._lastTemporalDate = null;
+      }
+    }
+
+    _exceptionStatus(rule) {
+      const today = this._exceptionToday();
+      return today < rule.start_date ? this._exceptionText("Geplant", "Planned")
+        : today > rule.end_date ? this._exceptionText("Abgelaufen", "Expired") : this._exceptionText("Aktiv", "Active");
+    }
+
+    _exceptionDate(value) {
+      return new Date(`${value}T12:00:00`).toLocaleDateString(this._language() === "de" ? "de-DE" : "en-GB");
+    }
+
+    _exceptionDateAfter(value, days) {
+      const shifted = new Date(`${value}T00:00:00Z`);
+      shifted.setUTCDate(shifted.getUTCDate() + days);
+      return shifted.toISOString().slice(0, 10);
+    }
+
+    _exceptionSummary(rule) {
+      const config = this._backendConfig || {};
+      const missing = this._exceptionText("fehlt", "missing");
+      const targets = [
+        ...(rule.cover_ids || []).map((id) => {
+          const cover = (config.covers || []).find((c) => c.entity_id === id);
+          return cover && this._state(id) ? cover.name : `${cover ? cover.name : id} (${missing})`;
+        }),
+        ...(rule.area_ids || []).map((id) => {
+          const area = (config.custom_areas || []).find((a) => a.id === id);
+          return area ? area.name : `${id} (${missing})`;
+        }),
+      ];
+      const actionName = (action) => action === "open" ? this._exceptionText("Öffnen", "Opening") : this._exceptionText("Schließen", "Closing");
+      const behavior = rule.mode === "pause"
+        ? `${(rule.actions || []).map(actionName).join(" + ")} ${this._exceptionText("pausiert", "paused")}`
+        : ["open", "close"].filter((a) => rule[`${a}_time`]).map((a) => `${actionName(a)} ${rule[`${a}_time`]}`).join(" · ");
+      return `${targets.join(", ")} · ${this._exceptionDate(rule.start_date)} – ${this._exceptionDate(rule.end_date)} · ${behavior}`;
+    }
+
+    _exceptionSectionKey(coverId, areaId) {
+      return `detail-exceptions-${coverId || areaId || "global"}`;
+    }
+
+    _renderExceptionSection(coverId, areaId, { collapsible = false, framed = !collapsible } = {}) {
+      const config = this._backendConfig || {};
+      const memberIds = areaId ? Object.keys(config.shutter_areas || {}).filter((id) => config.shutter_areas[id].includes(areaId)) : [];
+      const ruleMatchesCover = (rule, id) => (rule.cover_ids || []).includes(id) || (rule.area_ids || []).some((area) => ((config.shutter_areas || {})[id] || []).includes(area));
+      const rules = (config.temporal_exceptions || []).filter((rule) =>
+        coverId ? ruleMatchesCover(rule, coverId) : areaId ? (rule.area_ids || []).includes(areaId) || memberIds.some((id) => ruleMatchesCover(rule, id)) : true
+      );
+      const key = this._exceptionSectionKey(coverId, areaId);
+      let html = `<section${framed ? ' class="ssm-card"' : ""} data-temporal-exception-section data-temporal-cover="${this._escapeHtml(coverId || "")}" data-temporal-area="${this._escapeHtml(areaId || "")}" data-temporal-collapsible="${collapsible}" data-temporal-framed="${framed}">`;
+      let expanded = true;
+      if (collapsible) {
+        const title = this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions");
+        const section = this._sectionToggle(key, title, false);
+        html += section.headerHtml;
+        expanded = section.isOpen;
+      } else {
+        html += `<h3>${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</h3>`;
+      }
+      if (expanded) {
+        html += `<p class="hint">${this._exceptionText("Ganztägig vom Start- bis einschließlich Enddatum. Danach gilt wieder der normale Zeitplan.", "Whole days, including both start and end dates. The normal schedule resumes afterwards.")}</p>`;
+        if (!rules.length) html += `<p class="empty">${this._exceptionText("Noch keine Ausnahmen angelegt.", "No exceptions created yet.")}</p>`;
+        for (const rule of rules) {
+          const id = this._escapeHtml(rule.id);
+          const expired = this._exceptionStatus(rule) === this._exceptionText("Abgelaufen", "Expired");
+          html += `<div class="list-item"><div class="main"><div class="name">${this._escapeHtml(this._exceptionSummary(rule))}</div>
+          <span class="pill" data-exception-status="${id}">${this._exceptionStatus(rule)}</span></div><div class="actions">
+            <button data-exception-edit="${id}" ${coverId ? `data-exception-return-cover="${this._escapeHtml(coverId)}"` : ""} ${areaId ? `data-exception-area="${this._escapeHtml(areaId)}"` : ""} title="${this._exceptionText("Bearbeiten", "Edit")}" aria-label="${this._exceptionText("Ausnahme bearbeiten", "Edit exception")}"><ha-icon icon="mdi:pencil"></ha-icon></button>
+            ${expired ? `<button data-exception-edit="${id}" data-exception-reactivate ${coverId ? `data-exception-return-cover="${this._escapeHtml(coverId)}"` : ""} ${areaId ? `data-exception-area="${this._escapeHtml(areaId)}"` : ""} title="${this._exceptionText("Reaktivieren", "Reactivate")}" aria-label="${this._exceptionText("Abgelaufene Ausnahme reaktivieren", "Reactivate expired exception")}"><ha-icon icon="mdi:restart"></ha-icon></button>` : ""}
+            <button data-exception-delete="${id}" title="${this._exceptionText("Löschen", "Delete")}" aria-label="${this._exceptionText("Ausnahme löschen", "Delete exception")}"><ha-icon icon="mdi:delete"></ha-icon></button></div></div>`;
+        }
+        // Keep the list action inside the same expandable section. Otherwise
+        // an empty or collapsed list still looks open because its add button
+        // remains visible below the toggle.
+        const guestArea = config.restricted && coverId ? ((config.shutter_areas || {})[coverId] || []).find((id) => (config.custom_areas || []).some((a) => a.id === id)) : null;
+        const attributes = areaId || guestArea ? `data-exception-area="${this._escapeHtml(areaId || guestArea)}"` : coverId ? `data-exception-cover="${this._escapeHtml(coverId)}"` : "";
+        html += `<button class="add-btn" data-exception-edit="__new__" ${attributes}><ha-icon icon="mdi:plus"></ha-icon> ${this._exceptionText("Neue Ausnahme", "New exception")}</button><span class="save-status" data-exception-status-message role="status"></span>`;
+      }
+      html += `</section>`;
+      return html;
+    }
+
+    _renderSettingsExceptions() {
+      const expiredLimit = (this._backendConfig || {}).expired_exception_limit || 10;
+      return `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`
+        + this._renderExceptionSection(null, null, { framed: false })
+        + `<p class="hint">${this._exceptionText(`Die letzten ${expiredLimit} abgelaufenen Ausnahmen bleiben zum Reaktivieren erhalten. Ältere Einträge werden automatisch entfernt.`, `The ${expiredLimit} most recent expired exceptions remain available for reactivation. Older entries are removed automatically.`)}</p>`
+        + `<button class="add-btn" data-settings-nav="${(this._backendConfig || {}).restricted ? "settings-areas" : "settings-schedules"}"><ha-icon icon="mdi:calendar-sync"></ha-icon> ${this._exceptionText("Wiederkehrende Zeitprofile", "Recurring time profiles")}</button>`;
+    }
+
+    _renderExceptionEdit() {
+      const config = this._backendConfig || {};
+      const existing = (config.temporal_exceptions || []).find((rule) => rule.id === this._editingExceptionId);
+      const rule = existing ? { ...existing } : {
+        start_date: this._exceptionToday(), end_date: this._exceptionToday(), mode: "pause", actions: ["open", "close"],
+        cover_ids: this._exceptionPrefillCover ? [this._exceptionPrefillCover] : [],
+        area_ids: this._exceptionPrefillArea ? [this._exceptionPrefillArea] : [],
+      };
+      if (existing && this._exceptionReactivating) {
+        const duration = Math.max(0, Math.round((Date.parse(`${existing.end_date}T00:00:00Z`) - Date.parse(`${existing.start_date}T00:00:00Z`)) / 86400000));
+        rule.start_date = this._exceptionToday();
+        rule.end_date = this._exceptionDateAfter(rule.start_date, duration);
+      }
+      const covers = [...(config.covers || [])];
+      const areas = [...(config.custom_areas || [])];
+      for (const id of rule.cover_ids) if (!covers.some((c) => c.entity_id === id)) covers.push({ entity_id: id, name: `${id} (${this._exceptionText("fehlt", "missing")})` });
+      for (const id of rule.area_ids) if (!areas.some((a) => a.id === id)) areas.push({ id, name: `${id} (${this._exceptionText("fehlt", "missing")})` });
+      const target = (id, name, type) => `<label><input type="${config.restricted ? "radio" : "checkbox"}" name="exception-${type}" data-exception-target="${type}" value="${this._escapeHtml(id)}" ${rule[type === "cover" ? "cover_ids" : "area_ids"].includes(id) ? "checked" : ""}> ${this._escapeHtml(name)}</label>`;
+      return `<button class="back" data-exception-back><ha-icon icon="mdi:arrow-left"></ha-icon> ${this._exceptionText("Zurück", "Back")}</button>
+        <h2>${existing ? this._exceptionText("Ausnahme bearbeiten", "Edit exception") : this._exceptionText("Neue Ausnahme", "New exception")}</h2>
+        ${this._exceptionReactivating ? `<p class="hint">${this._exceptionText("Der Zeitraum wird ab heute mit derselben Dauer neu angesetzt. Du kannst die Daten vor dem Speichern ändern.", "The date range restarts today for the same duration. You can change the dates before saving.")}</p>` : ""}
+        <form data-exception-form><div class="form-grid">
+          ${!config.restricted ? `<fieldset class="form-field exception-targets"><legend>${this._exceptionText("Rollläden", "Shutters")}</legend>${covers.map((c) => target(c.entity_id, c.name, "cover")).join("")}</fieldset>` : ""}
+          ${areas.length ? `<fieldset class="form-field exception-targets"><legend>${this._exceptionText("Bereiche (aktuelle Mitglieder)", "Areas (current members)")}</legend>${areas.map((a) => target(a.id, a.name, "area")).join("")}</fieldset>` : ""}
+          <div class="form-field"><label for="exception-start">${this._exceptionText("Von", "From")}</label><input id="exception-start" type="date" required data-exception-field="start_date" value="${this._escapeHtml(rule.start_date)}"></div>
+          <div class="form-field"><label for="exception-end">${this._exceptionText("Bis einschließlich", "Through (inclusive)")}</label><input id="exception-end" type="date" required data-exception-field="end_date" value="${this._escapeHtml(rule.end_date)}"></div>
+          <div class="form-field"><label for="exception-mode">${this._exceptionText("Verhalten", "Behavior")}</label><select id="exception-mode" data-exception-field="mode">
+            <option value="pause" ${rule.mode === "pause" ? "selected" : ""}>${this._exceptionText("Automatik pausieren", "Pause automation")}</option>
+            <option value="times" ${rule.mode === "times" ? "selected" : ""}>${this._exceptionText("Andere Fahrzeiten", "Different movement times")}</option></select></div>
+          <fieldset class="form-field" data-exception-mode-fields="pause" ${rule.mode !== "pause" ? "hidden" : ""}><legend>${this._exceptionText("Pausieren", "Pause")}</legend>
+            <label><input type="checkbox" data-exception-action="open" ${(rule.actions || []).includes("open") ? "checked" : ""}> ${this._exceptionText("Automatisches Öffnen", "Automatic opening")}</label>
+            <label><input type="checkbox" data-exception-action="close" ${(rule.actions || []).includes("close") ? "checked" : ""}> ${this._exceptionText("Automatisches Schließen", "Automatic closing")}</label></fieldset>
+          <fieldset class="form-field" data-exception-mode-fields="times" ${rule.mode !== "times" ? "hidden" : ""}><legend>${this._exceptionText("Fahrzeiten", "Movement times")}</legend>
+            <label for="exception-open">${this._exceptionText("Öffnen (optional)", "Opening (optional)")}</label><input id="exception-open" type="time" data-exception-field="open_time" value="${this._escapeHtml(rule.open_time || "")}">
+            <label for="exception-close">${this._exceptionText("Schließen (optional)", "Closing (optional)")}</label><input id="exception-close" type="time" data-exception-field="close_time" value="${this._escapeHtml(rule.close_time || "")}">
+            <p class="hint">${this._exceptionText("Leere Felder folgen dem bisherigen Zeitplan.", "Empty fields follow the existing schedule.")}</p></fieldset>
+        </div><p class="hint">${config.restricted ? this._exceptionText("Gilt für alle Rollläden im ausgewählten Bereich. ", "Applies to all shutters in the selected area. ") : ""}${this._exceptionText("Die manuelle Bedienung bleibt möglich. Uhrzeiten richten sich nach der Home-Assistant-Zeitzone.", "Manual control remains available. Times use the Home Assistant time zone.")}</p>
+        <button type="button" class="save-btn" data-save-exception>Save</button><span class="save-status" data-exception-status-message role="status"></span></form>`;
+    }
+
+    _exceptionError(code) {
+      const messages = {
+        invalid_dates: ["Bitte einen gültigen Zeitraum wählen: Startdatum darf nicht nach dem Enddatum liegen.", "Choose a valid date range: start must not be after end."],
+        invalid_targets: ["Bitte mindestens einen gültigen Rollladen oder Bereich auswählen.", "Select at least one valid shutter or area."],
+        invalid_actions: ["Bitte Öffnen, Schließen oder beides auswählen.", "Select opening, closing or both."],
+        missing_times: ["Bitte mindestens eine Fahrzeit festlegen.", "Set at least one movement time."],
+        invalid_times: ["Bitte gültige Uhrzeiten eingeben.", "Enter valid times."],
+        conflicting_times: ["Die Fahrzeiten überschneiden sich mit einer anderen Ausnahme für dieselben Rollläden.", "These times overlap another exception for the same shutters."],
+        expired_limit: ["Der Zeitraum liegt zu weit zurück. Die ältesten abgelaufenen Ausnahmen werden nicht zusätzlich gespeichert.", "That date range is too old to retain; the oldest expired exceptions are kept out of the history limit."],
+      };
+      return messages[code] ? this._exceptionText(...messages[code]) : code;
+    }
+
+    async _saveException() {
+      const form = this.shadowRoot.querySelector("[data-exception-form]");
+      if (!form.reportValidity()) return;
+      const status = form.querySelector("[data-exception-status-message]");
+      const button = form.querySelector("[data-save-exception]");
+      if (button.disabled) return;
+      const field = (key) => form.querySelector(`[data-exception-field="${key}"]`).value;
+      const targets = (type) => [...form.querySelectorAll(`[data-exception-target="${type}"]:checked`)].map((el) => el.value);
+      const rule = {
+        id: this._editingExceptionId || null, start_date: field("start_date"), end_date: field("end_date"), mode: field("mode"),
+        cover_ids: targets("cover"), area_ids: targets("area"),
+        actions: [...form.querySelectorAll("[data-exception-action]:checked")].map((el) => el.getAttribute("data-exception-action")),
+        open_time: field("open_time") || null, close_time: field("close_time") || null,
+      };
+      const error = rule.start_date > rule.end_date ? "invalid_dates"
+        : !rule.cover_ids.length && !rule.area_ids.length ? "invalid_targets"
+        : rule.mode === "pause" && !rule.actions.length ? "invalid_actions"
+        : rule.mode === "times" && !rule.open_time && !rule.close_time ? "missing_times" : null;
+      if (error) { status.textContent = this._exceptionError(error); return; }
+      button.disabled = true;
+      status.textContent = this._exceptionText("Wird gespeichert …", "Saving …");
+      try {
+        const result = await this._hass.callWS({ type: "smart_shutter/save_temporal_exception", entry_id: this._backendConfig.entry_id, exception: rule });
+        if (!result.success) {
+          const details = (result.conflicts || []).map((r) => this._exceptionSummary(r)).join("; ");
+          status.textContent = `${this._exceptionError(result.validation_error)}${details ? ` ${details}` : ""}`;
+          return;
+        }
+        await this._loadBackendConfig();
+        this._invalidateForecastCache();
+        const returnView = this._exceptionReturnView || "settings-exceptions";
+        const sectionKey = returnView === "detail"
+          ? this._exceptionSectionKey(this._exceptionReturnCover || rule.cover_ids[0] || null, null)
+          : returnView === "settings-area-edit"
+            ? this._exceptionSectionKey(null, this._exceptionPrefillArea || rule.area_ids[0] || null)
+            : this._exceptionSectionKey(null, null);
+        this._areaSectionExpanded[sectionKey] = true;
+        this._exceptionReactivating = false;
+        this._view = this._exceptionReturnView || "settings-exceptions";
+        this._render();
+      } catch (err) { status.textContent = `${this._exceptionText("Speichern fehlgeschlagen", "Save failed")}: ${err.message || err}`; }
+      finally { button.disabled = false; }
+    }
+
+    async _deleteException(id) {
+      if (!window.confirm(this._exceptionText("Diese zeitliche Ausnahme löschen?", "Delete this temporal exception?"))) return;
+      const status = this.shadowRoot.querySelector("[data-exception-status-message]");
+      try {
+        await this._hass.callWS({ type: "smart_shutter/delete_temporal_exception", entry_id: this._backendConfig.entry_id, exception_id: id });
+        await this._loadBackendConfig();
+        this._invalidateForecastCache();
+        this._render();
+      } catch (err) { if (status) status.textContent = `${this._exceptionText("Löschen fehlgeschlagen", "Delete failed")}: ${err.message || err}`; }
+    }
+
     _renderSettingsSchedules() {
       const schedules = (this._backendConfig && this._backendConfig.custom_schedules) || [];
       const conflicts = (this._backendConfig && this._backendConfig.schedule_conflicts) || {};
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
-      html += `<h2>Custom profiles</h2>`;
+      html += `<h2>${this._exceptionText("Wiederkehrende Zeitprofile", "Recurring time profiles")}</h2>`;
       html += `<div class="hint">Recurring Time Exceptions, apply to all shutters (can be overwritten locally per shutter). Order = Priority in case of overlaps - the first rule wins.</div>`;
 
       if (!schedules.length) {
