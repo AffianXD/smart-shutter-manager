@@ -5,7 +5,7 @@ and controls existing `cover` entities. It includes a dashboard card, schedule
 profiles, sun position rules, frost protection, notifications, and area based
 settings. It does not replace the cover integration for your devices.
 
-> **Release status:** v0.23.0 is being prepared. The inherited v0.20.2 code
+> **Release status:** v0.24.0 is being prepared. The inherited v0.20.2 code
 > was reconstructed after a workspace reset; its former full test suite was
 > lost. Check the test and release status before installing this branch.
 
@@ -66,6 +66,25 @@ type: custom:smart-shutter-card
 
 YAML-managed dashboards also need this resource registered manually. Restart
 Home Assistant after installing or replacing the integration.
+
+## Notifications
+
+Set a global notification service in the card's basic settings, or leave it
+empty and configure recipients only for selected areas or shutters. Each area
+and each shutter's Basic tab offers **Inherit**, **Off**, and **Custom recipient**.
+Custom recipients use a registered `notify.*` service, such as
+`notify.mobile_app_phone`.
+
+Individual shutter settings take priority over area settings, followed by the
+global recipient. A shutter with its own recipient can still send notifications
+when its area is Off. With multiple assigned areas, the first explicit area
+setting in assignment order wins for movement, frost, and pre-close messages.
+Sun rules use the triggering area's setting and group notifications by recipient;
+names and counts include only that recipient's enabled shutters.
+
+These settings apply to existing movement and frost messages, pre-close warnings,
+and enabled sun rule messages. The configured warning lead time and the sun rule
+notification toggles still apply. Existing area recipients continue to work.
 
 ## What it does
 
@@ -150,7 +169,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and
 [CHANGELOG.md](CHANGELOG.md) for release notes. Report a reproducible issue
 through the [issue tracker](https://github.com/AffianXD/smart-shutter-manager/issues).
 Local regression checks have passed, while public CI and installation smoke
-tests remain pending before the v0.23.0 release.
+tests remain pending before the v0.24.0 release.
 
 Smart Shutter Manager is an independent community project and is not an
 official Home Assistant integration.

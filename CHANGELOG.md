@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: v0.24.0
+
+- Add per-shutter notification settings to inherit area/global recipients, turn
+  notifications off, or choose a custom service. Apply routing to movement,
+  frost, pre-close, and sun-rule notifications.
+
 ## Unreleased: v0.23.0
 
 - Add optional summer/winter schedules selected by daylight saving time in
