@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased: seasonal time profiles
+## Unreleased: v0.23.0
 
 - Add optional summer/winter schedules selected by daylight saving time in
   Home Assistant's timezone, globally and per shutter.
