@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased: v0.25.0
+
+- Add configurable dashboard shortcuts for navigation, cover actions, and
+  automations.
+
 ## Unreleased: v0.24.0
 
 - Add per-shutter notification settings to inherit area/global recipients, turn
