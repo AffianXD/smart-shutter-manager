@@ -10,7 +10,7 @@
       },
       "names": {
         "title": "Assign names",
-        "description": "Optionally give individual display names to the selected shutters."
+        "description": "Optionally assign display names. After saving, open Smart Shutter Manager from the Home Assistant sidebar under “Shutters”. Open and close automation start disabled; review the times and forecast there first."
       }
     },
     "error": {

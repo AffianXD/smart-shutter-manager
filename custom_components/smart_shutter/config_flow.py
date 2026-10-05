@@ -38,6 +38,7 @@ from .const import (
     DEFAULT_STAGGER_DELAY_MS,
     MAX_STAGGER_DELAY_MS,
     CONF_NAMES,
+    CONF_ONBOARDING_COMPLETED,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_TEXT_FROST,
     CONF_NOTIFY_TEXT_MOVED,
@@ -156,6 +157,7 @@ class SmartShutterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_COVERS: self._selected_covers,
                     CONF_NAMES: names,
                 },
+                options={CONF_ONBOARDING_COMPLETED: False},
             )
 
         schema_dict: dict[Any, Any] = {}

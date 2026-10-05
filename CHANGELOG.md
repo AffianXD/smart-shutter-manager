@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: v0.26.0
+
+- Add an interactive first-run wizard for schedule times, fixed or solar
+  triggers, target positions, optional holidays and areas, and a seven-day
+  preview. Keep both automations disabled until the user explicitly finishes.
+- Group each solar offset under its matching sunrise or sunset trigger, use a
+  100% default opening position, and route the completed setup's preview to the
+  dashboard timeline.
+
 ## Unreleased: v0.25.0
 
 - Add configurable dashboard shortcuts for navigation, cover actions, and

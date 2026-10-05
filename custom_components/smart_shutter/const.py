@@ -10,6 +10,7 @@ DOMAIN = "smart_shutter"
 # Config-Entry Keys (Config Flow)
 CONF_COVERS = "covers"          # List of selected cover.* entity_ids
 CONF_NAMES = "names"            # Mapping entity_id -> display name
+CONF_ONBOARDING_COMPLETED = "onboarding_completed"
 
 # Options Keys (Options Flow, Version 0.2+)
 CONF_HOLIDAY_ENTITY = "holiday_entity"  # e.g. binary_sensor.schulferien
