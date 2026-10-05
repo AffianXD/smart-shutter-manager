@@ -5,7 +5,7 @@ and controls existing `cover` entities. It includes a dashboard card, schedule
 profiles, sun position rules, frost protection, notifications, and area based
 settings. It does not replace the cover integration for your devices.
 
-> **Release status:** v0.21.0 is being prepared. The inherited v0.20.2 code
+> **Release status:** v0.22.1 is being prepared. The inherited v0.20.2 code
 > was reconstructed after a workspace reset; its former full test suite was
 > lost. Check the test and release status before installing this branch.
 
@@ -121,7 +121,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and
 [CHANGELOG.md](CHANGELOG.md) for release notes. Report a reproducible issue
 through the [issue tracker](https://github.com/AffianXD/smart-shutter-manager/issues).
 Local regression checks have passed, while public CI and installation smoke
-tests remain pending before the v0.21.0 release.
+tests remain pending before the v0.22.1 release.
 
 Smart Shutter Manager is an independent community project and is not an
 official Home Assistant integration.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: v0.22.1
+
+- Unify add, remove, and rename in one admin-only shutter-management view with
+  automatic saving and visible save status.
+- Retry failed saves, keep temporarily missing managed covers selectable, and
+  preserve the original cover entities when managed shutters are removed.
+
 ## Unreleased: v0.22.0
 
 - Add admin-only "Manage shutters" to the Smart Shutter settings menu and
