@@ -175,7 +175,7 @@ async function main() {
     await card.locator('[data-nav="list"]').click();
     await card.locator('[data-open-detail="dev_testroom"]').click();
     await card.locator('[data-tab="advanced"]').click();
-    const shutterExceptions = card.locator('[data-toggle-area-section="detail-exceptions-cover.testroom"]');
+    const shutterExceptions = card.locator('.section-toggle[data-toggle-area-section="detail-exceptions-cover.testroom"]');
     assert.equal(await shutterExceptions.count(), 1, "Per-shutter exceptions live in Advanced settings");
     assert.equal(await card.locator('[data-temporal-exception-section][data-temporal-cover="cover.testroom"]').getAttribute("class"), null, "Per-shutter exceptions share the flat accordion style");
     const advancedOrder = await card.evaluate((el) => {

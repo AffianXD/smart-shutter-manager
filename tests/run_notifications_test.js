@@ -133,9 +133,9 @@ async function main() {
    assert.equal(await areaForm.locator(".notification-title h3").count(), 0, "Area accordion does not repeat its notification heading inside");
    assert.equal(await areaMode.inputValue(), "custom", "Legacy area recipient is preserved");
    assert.equal(await areaForm.locator("details.notification-info[open]").count(), 0, "Area hints are also collapsed");
-    await card.locator('[data-toggle-area-section="notify"]').click();
+    await card.locator('.section-toggle[data-toggle-area-section="notify"]').click();
     assert.equal(await card.locator("[data-notification-settings]").count(), 0, "Collapsing the area notification section hides the whole form");
-    await card.locator('[data-toggle-area-section="notify"]').click();
+    await card.locator('.section-toggle[data-toggle-area-section="notify"]').click();
     assert.equal(await card.locator("[data-notification-settings]").count(), 1, "The notification form returns when its own section is expanded");
    await card.locator('[data-area-field="name"]').fill("South draft");
     await areaRecipient.fill("notify.missing");

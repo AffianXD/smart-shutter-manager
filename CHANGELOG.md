@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: v0.28.0
+
+- Replace long explanatory paragraphs with compact, accessible info popovers
+  across settings, areas, schedules, triggers, sun-position rules, and managed
+  shutters. Keep short help, status, and error messages visible inline.
+- Keep popovers within both the viewport and their containing card, with
+  keyboard dismissal, focus restoration, outside-click dismissal, and responsive
+  positioning on desktop and mobile.
+
 ## Unreleased: v0.27.0
 
 - Add date-based exceptions to pause opening/closing or set alternate times for
