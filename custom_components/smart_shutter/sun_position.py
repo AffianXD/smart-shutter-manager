@@ -22,6 +22,7 @@ from .coordinator import SmartShutterCoordinator
 from .helpers import render_notify_template
 from .localization import notification_template, is_german
 from .storage import EventHistoryStore
+from .temporal_exceptions import is_date_paused
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -284,7 +285,7 @@ Since v0.17, 'outside_temp' and 'inside_temp' (float or None, see coordinator.ar
             return
 
         _LOGGER.info(
-            "Smart Shutter Manager: Sun position rule '%s' active - moving %d shutters to %s%.",
+            "Smart Shutter Manager: Sun position rule '%s' active - moving %d shutters to %s%%.",
             area.get("name"),
             len(members),
             target_position,
@@ -292,6 +293,12 @@ Since v0.17, 'outside_temp' and 'inside_temp' (float or None, see coordinator.ar
         moved_members: list[str] = []
         for cover_entity_id in members:
             cover_state = self.hass.states.get(cover_entity_id)
+            current = cover_state.attributes.get("current_position") if cover_state else None
+            actions = ("open", "close") if current is None else (
+                "open" if target_position > current else "close",
+            )
+            if any(is_date_paused(self._coordinator, cover_entity_id, action, dt_util.now().date()) for action in actions):
+                continue
             supported = cover_state.attributes.get("supported_features", 0) if cover_state else 0
             if not (supported & CoverEntityFeature.SET_POSITION):
                 _LOGGER.warning(

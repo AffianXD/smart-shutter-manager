@@ -20,6 +20,7 @@ from .const import (
     CONF_COVERS,
     CONF_CUSTOM_AREAS,
     CONF_CUSTOM_SCHEDULES,
+    CONF_TEMPORAL_EXCEPTIONS,
     CONF_SHUTTER_NOTES,
     CONF_EXTERNAL_TRIGGERS,
     CONF_MANUAL_PAUSE_MINUTES,
@@ -86,6 +87,8 @@ class SmartShutterCoordinator:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
+        self.options_snapshot = dict(entry.options)
+        self.data_snapshot = dict(entry.data)
         self.shutters: dict[str, ManagedShutter] = {}
 
         # Registry for entities that evaluate scheduler.py:
@@ -456,6 +459,11 @@ class SmartShutterCoordinator:
             self.hass, CONF_NOTIFY_TEXT_PRECLOSE,
             self.entry.options.get(CONF_NOTIFY_TEXT_PRECLOSE), DEFAULT_NOTIFY_TEXT_PRECLOSE,
         )
+
+    @property
+    def temporal_exceptions(self) -> list[dict[str, Any]]:
+        """Persisted whole-day pauses and alternate times."""
+        return list(self.entry.options.get(CONF_TEMPORAL_EXCEPTIONS, []))
 
     @property
     def custom_schedules(self) -> list[dict[str, Any]]:

@@ -5,7 +5,7 @@ and controls existing `cover` entities. It includes a dashboard card, schedule
 profiles, sun position rules, frost protection, notifications, and area based
 settings. It does not replace the cover integration for your devices.
 
-> **Release status:** v0.26.0 is being prepared. The inherited v0.20.2 code
+> **Release status:** v0.27.0 is being prepared. The inherited v0.20.2 code
 > was reconstructed after a workspace reset; its former full test suite was
 > lost. Check the test and release status before installing this branch.
 
@@ -103,6 +103,19 @@ Assistant user and entity permissions separately before giving guests access.
 
 ## Configure and use
 
+**Settings → Temporal exceptions** lets you pause automatic opening, closing,
+or both, or set different movement times for a date range. Select individual
+shutters or areas; area rules follow current membership. Both dates are included
+and use Home Assistant's time zone. Empty time fields keep the existing schedule.
+Pauses also block external triggers, postponed actions, and sun position movements
+in the paused direction; manual cover control remains available. After the end
+date, the normal schedule resumes without catching up skipped movements.
+Overlapping pauses combine; overlapping alternate times for the same action and
+shutters are rejected. Existing custom profiles remain under **Recurring time
+profiles**. Exceptions can also be created in shutter and area details. Guests
+can manage exceptions for one assigned area at a time. Up to ten of the most
+recently expired rules remain available to reactivate; older entries are pruned.
+
 Open the bundled card to edit schedules, areas, triggers, and per-shutter
 settings. Administrators can add or remove managed shutters under **Smart Shutter
 → Settings → Manage shutters**, or through the integration's **Configure →
@@ -171,7 +184,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and
 [CHANGELOG.md](CHANGELOG.md) for release notes. Report a reproducible issue
 through the [issue tracker](https://github.com/AffianXD/smart-shutter-manager/issues).
 Local regression checks have passed, while public CI and installation smoke
-tests remain pending before the v0.26.0 release.
+tests remain pending before the v0.27.0 release.
 
 Smart Shutter Manager is an independent community project and is not an
 official Home Assistant integration.

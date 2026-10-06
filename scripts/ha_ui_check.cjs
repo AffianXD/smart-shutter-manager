@@ -82,7 +82,7 @@ async function main() {
     await page.locator("#ha-launch-screen").waitFor({ state: "hidden", timeout: 30000 });
     await page.screenshot({ path: path.join(output, "overview-desktop.png"), fullPage: true });
     await card.locator('[data-nav="list"]').first().click();
-    assert.equal(await card.locator("[data-open-detail]").count(), 2);
+    assert.equal(await card.locator("[data-open-detail]").count(), mode === "test" ? 3 : 2);
     const ids = await page.evaluate(() => Object.keys(document.querySelector("home-assistant").hass.states).filter(id => id.startsWith("cover.")));
     assert.equal(ids.every(id => virtual.has(id)) && ids.length === 3, true);
     await card.locator('[data-nav="settings"]').click();
@@ -90,13 +90,49 @@ async function main() {
     await card.locator("[data-managed-cover]").first().waitFor();
     assert.equal(await card.locator("[data-managed-cover]").count(), 3);
     await page.screenshot({ path: path.join(output, "management-desktop.png"), fullPage: true });
+
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-exceptions"]').click();
+    const globalToggle = card.locator('[data-toggle-area-section="detail-exceptions-global"]');
+    assert.equal(await globalToggle.count(), 0, "The dedicated Settings page shows exceptions without an accordion");
+    const globalSection = card.locator('[data-temporal-exception-section]');
+    await globalSection.locator("h3").waitFor();
+    assert.match(await globalSection.locator("h3").textContent(), /Zeitliche Ausnahmen|Temporal exceptions/);
+    const addException = card.locator('[data-exception-edit="__new__"]');
+    await addException.waitFor();
+    await page.screenshot({ path: path.join(output, "exceptions-settings-desktop.png"), fullPage: true });
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(400);
     assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
-    await page.screenshot({ path: path.join(output, "management-mobile.png"), fullPage: true });
+    await page.screenshot({ path: path.join(output, "exceptions-settings-mobile.png"), fullPage: true });
+
+    await card.locator('[data-nav="list"]').first().click();
+    await card.locator("[data-open-detail]").first().click();
+    await card.locator('[data-tab="advanced"]').click();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(400);
+    const shutterExceptions = card.locator('[data-toggle-area-section^="detail-exceptions-cover."]');
+    assert.equal(await shutterExceptions.count(), 1, "Per-shutter exceptions are available in Advanced settings");
+    assert.equal(await card.locator('[data-exception-edit="__new__"]').count(), 0, "Per-shutter exceptions start collapsed too");
+    await shutterExceptions.click();
+    await card.locator('[data-exception-edit="__new__"]').waitFor();
+    await shutterExceptions.click();
+    assert.equal(await card.locator('[data-exception-edit="__new__"]').count(), 0, "Per-shutter exception actions collapse with the list");
+    await page.screenshot({ path: path.join(output, "shutter-exceptions-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(400);
+    assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await shutterExceptions.click();
+    await card.locator('[data-exception-edit="__new__"]').waitFor();
+    await shutterExceptions.click();
+    assert.equal(await card.locator('[data-exception-edit="__new__"]').count(), 0);
+    await page.screenshot({ path: path.join(output, "shutter-exceptions-mobile.png"), fullPage: true });
+
     assert.deepEqual(errors, []);
     assert.deepEqual(blocked, [], "Baseline should not attempt writes or unknown requests");
-    const report = { url: state.url, project: state.project, source_hash: state.source_hash, desktop: true, mobile: true, errors, blocked };
+    const report = { url: state.url, project: state.project, source_hash: state.source_hash,
+      desktop: true, mobile: true, global_exceptions_always_visible: true, shutter_exceptions_collapsed: true, errors, blocked };
     fs.writeFileSync(path.join(output, "ui-result.json"), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report));
   } finally {

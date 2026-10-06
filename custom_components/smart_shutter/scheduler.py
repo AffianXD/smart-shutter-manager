@@ -35,6 +35,7 @@ from .const import (
 )
 from .coordinator import ManagedShutter, SmartShutterCoordinator
 from .seasons import SEASONS, local_wall_time, season_at, seasonal_enabled, seasonal_key
+from .temporal_exceptions import applicable_exceptions, exception_time, is_date_paused
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -324,6 +325,13 @@ def _global_fixed_time(coordinator, action, profile, season):
 
 def _resolve_day(hass, coordinator, shutter, action, profile, day, tzinfo):
     """One action per local day, resolved with the season at its actual instant."""
+    if shutter is not None:
+        if is_date_paused(coordinator, shutter.entity_id, action, day):
+            return None
+        alternate_time = exception_time(coordinator, shutter.entity_id, action, day)
+        if alternate_time is not None:
+            return local_wall_time(day, alternate_time, tzinfo)
+
     custom = is_custom_profile(profile)
     seasons = SEASONS if seasonal_enabled(coordinator) and not custom else (None,)
     candidates = []
@@ -354,11 +362,35 @@ def _resolve_day(hass, coordinator, shutter, action, profile, day, tzinfo):
 
 def _resolve_next(hass, coordinator, shutter, action, profile, now):
     area_ids = coordinator.shutter_areas.get(shutter.entity_id, []) if shutter else None
-    for day_offset in range(_MAX_LOOKAHEAD_DAYS):
-        day = now.date() + timedelta(days=day_offset)
+    candidate_ordinal = now.date().toordinal()
+    checked_days = 0
+    while checked_days < _MAX_LOOKAHEAD_DAYS and candidate_ordinal <= date.max.toordinal():
+        day = date.fromordinal(candidate_ordinal)
+        if shutter is not None:
+            pauses = [
+                rule for rule in applicable_exceptions(coordinator, shutter.entity_id, day)
+                if rule["mode"] == "pause" and action in rule["actions"]
+            ]
+            if pauses:
+                pause_end = date.fromisoformat(max(rule["end_date"] for rule in pauses))
+                candidate_ordinal = pause_end.toordinal() + 1
+                continue
+
+        day_offset = (day - now.date()).days
         day_profile = profile if day_offset == 0 else determine_active_profile(hass, coordinator, day, area_ids)
         candidate = _resolve_day(hass, coordinator, shutter, action, day_profile, day, now.tzinfo)
-        if candidate is not None and dt_util.as_utc(candidate) > dt_util.as_utc(now):
+        candidate_ordinal += 1
+        checked_days += 1
+        if (
+            candidate is not None
+            and dt_util.as_utc(candidate) > dt_util.as_utc(now)
+            and (
+                shutter is None
+                or not is_date_paused(
+                    coordinator, shutter.entity_id, action, candidate.date()
+                )
+            )
+        ):
             return candidate
     return None
 
@@ -373,7 +405,8 @@ def resolve_next_datetime(
 ) -> datetime | None:
     """Next local/global action, with manual overrides taking precedence."""
     override = coordinator.get_action_override(shutter.entity_id, action)
-    if override is not None and dt_util.as_utc(override) > dt_util.as_utc(now):
+    if (override is not None and dt_util.as_utc(override) > dt_util.as_utc(now)
+            and not is_date_paused(coordinator, shutter.entity_id, action, override.date())):
         return override
     return _resolve_next(hass, coordinator, shutter, action, profile, now)
 
