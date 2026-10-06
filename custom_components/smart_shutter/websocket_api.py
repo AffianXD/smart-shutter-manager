@@ -12,7 +12,6 @@ import re
 import uuid
 
 import voluptuous as vol
-import homeassistant.util.dt as dt_util
 
 from .seasons import CONF_SEASONAL_ENABLED, prepare_seasonal_options, seasonal_enabled, season_at
 
@@ -20,12 +19,14 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CATCH_UP_WINDOW,
     CONF_COVERS,
     CONF_CUSTOM_AREAS,
     CONF_CUSTOM_SCHEDULES,
+    CONF_TEMPORAL_EXCEPTIONS,
     CONF_EXTERNAL_TRIGGERS,
     CONF_FROST_ENTITY,
     CONF_OUTSIDE_TEMP_SENSOR,
@@ -58,6 +59,7 @@ from .const import (
     DEFAULT_NOTIFICATION_MAX_AGE_MINUTES,
     DEFAULT_STAGGER_DELAY_MS,
     MAX_STAGGER_DELAY_MS,
+    MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS,
     DEFAULT_POSTPONE_OPTIONS_MINUTES,
     DEFAULT_PRE_NOTIFY_LEAD_MINUTES,
     DOMAIN,
@@ -67,6 +69,14 @@ from .const import (
 from .scheduler import compute_forecast, find_overlapping_rules
 from .shutter_management import available_covers, async_update_covers
 from .notification_settings import notification_mode, validate_notification_settings
+from .temporal_exceptions import (
+    conflicting_exceptions,
+    conflicting_exception_pairs,
+    exception_allowed,
+    prune_exception_history,
+    prune_expired_exceptions,
+    validate_exception,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -230,6 +240,9 @@ async def handle_get_config(hass, connection, msg):
         return
 
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    temporal_exceptions, _ = prune_exception_history(
+        hass, entry, dt_util.now().date(), MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS
+    )
     options = entry.options
     shortcuts = options.get(CONF_HOME_SHORTCUTS, DEFAULT_HOME_SHORTCUTS)
     allowed_area_ids = _allowed_area_ids(coordinator, connection)
@@ -250,6 +263,7 @@ async def handle_get_config(hass, connection, msg):
                 "shutter_notifications": {},
                 "area_auto_temp_sensors": {},
                 "custom_schedules": [],
+                "temporal_exceptions": [],
                 "schedule_conflicts": {},
                 "external_triggers": [],
                 "covers": [],
@@ -373,6 +387,11 @@ async def handle_get_config(hass, connection, msg):
             "shutter_areas": shutter_areas,
             "area_auto_temp_sensors": area_auto_temp_sensors,
             "custom_schedules": custom_schedules,
+            "temporal_exceptions": [
+                rule for rule in temporal_exceptions
+                if exception_allowed(rule, allowed_area_ids)
+            ],
+            "expired_exception_limit": MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS,
             "schedule_conflicts": _compute_all_conflicts(custom_schedules),
             "external_triggers": external_triggers,
             "covers": covers,
@@ -1020,6 +1039,17 @@ async def handle_save_shutter_areas(hass, connection, msg):
         if area_ids:
             shutter_areas[entity_id] = area_ids
 
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    conflicts = conflicting_exception_pairs(
+        coordinator.temporal_exceptions, coordinator, shutter_areas
+    )
+    if conflicts:
+        connection.send_result(msg["id"], {
+            "success": False,
+            "validation_error": "conflicting_temporal_exceptions",
+        })
+        return
+
     data = dict(entry.options)
     data[CONF_SHUTTER_AREAS] = shutter_areas
     hass.config_entries.async_update_entry(entry, options=data)
@@ -1143,12 +1173,101 @@ async def handle_save_covers(hass, connection, msg):
     connection.send_result(msg["id"], {"success": True})
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"): "smart_shutter/save_temporal_exception",
+    vol.Optional("entry_id"): str,
+    vol.Required("exception"): dict,
+})
+@websocket_api.async_response
+async def handle_save_temporal_exception(hass, connection, msg):
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found.")
+        return
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    allowed = _allowed_area_ids(coordinator, connection)
+    raw = msg["exception"]
+    rule_id = raw.get("id")
+    if rule_id is not None and not isinstance(rule_id, str):
+        connection.send_error(msg["id"], "invalid_rule", "Invalid exception ID.")
+        return
+    existing = next((r for r in coordinator.temporal_exceptions if r["id"] == rule_id), None)
+    if rule_id and existing is None:
+        connection.send_error(msg["id"], "not_found", "Exception not found.")
+        return
+    # Pick only supported fields; callers cannot persist arbitrary configuration.
+    rule = {key: raw.get(key) for key in (
+        "start_date", "end_date", "mode", "cover_ids", "area_ids", "actions", "open_time", "close_time"
+    )}
+    error = validate_exception(rule, coordinator, existing)
+    if error:
+        connection.send_result(msg["id"], {"success": False, "validation_error": error})
+        return
+    if not exception_allowed(rule, allowed) or (existing is not None and not exception_allowed(existing, allowed)):
+        connection.send_error(msg["id"], "unauthorized", "Exception is outside your assigned area.")
+        return
+    rule["id"] = rule_id or f"exception_{uuid.uuid4().hex[:12]}"
+    for key in ("cover_ids", "area_ids"):
+        rule[key] = list(dict.fromkeys(rule[key]))
+    if rule["mode"] == "pause":
+        rule["actions"] = list(dict.fromkeys(rule["actions"]))
+        rule["open_time"] = rule["close_time"] = None
+    else:
+        rule["actions"] = []
+    others = [r for r in coordinator.temporal_exceptions if r["id"] != rule["id"]]
+    conflicts = conflicting_exceptions(rule, others, coordinator)
+    if conflicts:
+        # Never expose IDs or targets of inaccessible host rules to guests.
+        connection.send_result(msg["id"], {
+            "success": False, "validation_error": "conflicting_times",
+            "conflicts": [r for r in conflicts if exception_allowed(r, allowed)],
+        })
+        return
+    rules = [rule if r["id"] == rule["id"] else r for r in coordinator.temporal_exceptions]
+    if existing is None:
+        rules.append(rule)
+    rules = prune_expired_exceptions(rules, dt_util.now().date(), MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS)
+    if not any(saved.get("id") == rule["id"] for saved in rules):
+        connection.send_result(msg["id"], {"success": False, "validation_error": "expired_limit"})
+        return
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_TEMPORAL_EXCEPTIONS: rules})
+    _notify_reload(hass, entry)
+    connection.send_result(msg["id"], {"success": True, "exception": rule})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "smart_shutter/delete_temporal_exception",
+    vol.Optional("entry_id"): str,
+    vol.Required("exception_id"): str,
+})
+@websocket_api.async_response
+async def handle_delete_temporal_exception(hass, connection, msg):
+    entry = _get_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found.")
+        return
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    rule = next((r for r in coordinator.temporal_exceptions if r["id"] == msg["exception_id"]), None)
+    if rule is None:
+        connection.send_error(msg["id"], "not_found", "Exception not found.")
+        return
+    if not exception_allowed(rule, _allowed_area_ids(coordinator, connection)):
+        connection.send_error(msg["id"], "unauthorized", "Exception is outside your assigned area.")
+        return
+    rules = [r for r in coordinator.temporal_exceptions if r["id"] != rule["id"]]
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_TEMPORAL_EXCEPTIONS: rules})
+    _notify_reload(hass, entry)
+    connection.send_result(msg["id"], {"success": True})
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """Registers all WebSocket commands of the Custom UI (once per HA process, regardless of the number of Config Entries)."""
     websocket_api.async_register_command(hass, handle_get_available_covers)
     websocket_api.async_register_command(hass, handle_save_covers)
     websocket_api.async_register_command(hass, handle_get_config)
     websocket_api.async_register_command(hass, handle_complete_onboarding)
+    websocket_api.async_register_command(hass, handle_save_temporal_exception)
+    websocket_api.async_register_command(hass, handle_delete_temporal_exception)
     websocket_api.async_register_command(hass, handle_save_basic_settings)
     websocket_api.async_register_command(hass, handle_save_custom_schedules)
     websocket_api.async_register_command(hass, handle_save_external_triggers)

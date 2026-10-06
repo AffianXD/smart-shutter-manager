@@ -31,6 +31,7 @@ from .coordinator import ManagedShutter, SmartShutterCoordinator
 from .seasons import seasonal_enabled, season_at
 from .localization import display_text, is_german
 from .scheduler import ShutterSchedule, compute_global_schedule, compute_schedule
+from .temporal_exceptions import applicable_exceptions, is_date_paused
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -233,6 +234,13 @@ def _apply_next_action(sensor: _BaseScheduleSensor, schedule: ShutterSchedule) -
         "open_automation_enabled": schedule.open_automation_enabled,
         "close_automation_enabled": schedule.close_automation_enabled,
     }
+    shutter = getattr(sensor, "_shutter", None)
+    if shutter is not None:
+        active = applicable_exceptions(sensor._coordinator, shutter.entity_id, dt_util.now().date())
+        debug_attrs["temporal_exceptions"] = active
+        debug_attrs["date_pause_actions"] = sorted({
+            action for rule in active if rule["mode"] == "pause" for action in rule["actions"]
+        })
 
     if next_action is None:
         if not schedule.open_automation_enabled and not schedule.close_automation_enabled:
@@ -265,6 +273,8 @@ def _apply_next_action(sensor: _BaseScheduleSensor, schedule: ShutterSchedule) -
     shutter = getattr(sensor, "_shutter", None)
     if shutter is not None:
         override = sensor._coordinator.get_action_override(shutter.entity_id, action)
+        if override is not None and is_date_paused(sensor._coordinator, shutter.entity_id, action, override.date()):
+            override = None
         sensor._attr_extra_state_attributes["override_active"] = override is not None
         sensor._attr_extra_state_attributes["override_until"] = (
             override.isoformat() if override is not None else None

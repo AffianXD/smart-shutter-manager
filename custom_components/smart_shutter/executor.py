@@ -70,6 +70,7 @@ from .scheduler import (
 )
 from .storage import EventHistoryStore, LastExecutedStore, ManualPauseStore
 from .sun_position import SunPositionMonitor
+from .temporal_exceptions import exception_time, is_date_paused
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -336,6 +337,9 @@ class ShutterActionExecutor:
         self._prenotify_sent_at.pop(action, None)
 
         now = dt_util.now()
+        # Remember suppressed actions even without a timer: deleting the pause
+        # followed by a restart must not catch up today's omitted movement.
+        self._record_date_pause(action)
         profile = determine_active_profile(
             self.hass, self._coordinator, now.date(),
             self._coordinator.shutter_areas.get(self._shutter.entity_id, []),
@@ -393,6 +397,8 @@ class ShutterActionExecutor:
         async def _fire(_now) -> None:
             target = self._target_dt.get(action)
             if target is None:
+                return
+            if is_date_paused(self._coordinator, self._shutter.entity_id, action, dt_util.now().date()):
                 return
             if self._already_in_target_state(action):
                 # Shutter is already in the target position (e.g. manual
@@ -563,8 +569,19 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
             return
         await asyncio.sleep((index * delay_ms) / 1000)
 
+    def _record_date_pause(self, action: str) -> bool:
+        today = dt_util.now().date()
+        if not is_date_paused(self._coordinator, self._shutter.entity_id, action, today):
+            return False
+        if self._last_executed_store.get(self._shutter.entity_id, action) != today:
+            self._log_event(action, "skipped", "Automation paused (date exception)")
+            self._last_executed_store.set(self._shutter.entity_id, action, today)
+        return True
+
     async def _execute(self, action: str) -> None:
         """Checks manual pause + frost protection + automation, skips already reached target positions, then calls open/close_cover and reports actual movement to the NotificationBatcher."""
+        if self._record_date_pause(action):
+            return
         if self._manual_intervention_guard.is_paused(self._shutter.entity_id):
             paused_until = self._manual_intervention_guard.paused_until(self._shutter.entity_id)
             _LOGGER.info(
@@ -666,6 +683,8 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
             self._shutter.entity_id,
         )
         await self._apply_stagger_delay()
+        if self._record_date_pause(action):
+            return
         self._manual_intervention_guard.mark_self_initiated(self._shutter.entity_id)
         await self.hass.services.async_call(
             "cover",
@@ -699,6 +718,8 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
         )
 
     def _trigger_label(self, action: str) -> str:
+        if exception_time(self._coordinator, self._shutter.entity_id, action, dt_util.now().date()) is not None:
+            return "Schedule"
         action_type = get_action_type(self._coordinator, self._shutter, action)
         if action_type == TYPE_SUNRISE:
             return "Sunrise"

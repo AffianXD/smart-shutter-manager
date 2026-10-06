@@ -6,7 +6,7 @@ SchedulerManager (executor.py) and the two services through which
 own automations can intervene (skip_action/postpone_action)."""
 from __future__ import annotations
 
-from datetime import time as dt_time
+from datetime import date, time as dt_time
 import json
 import logging
 from pathlib import Path
@@ -20,11 +20,15 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_time_change
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ACTION_CLOSE,
     ACTION_OPEN,
     DATA_COORDINATOR,
+    CONF_TEMPORAL_EXCEPTIONS,
+    MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS,
     DATA_SCHEDULER_MANAGER,
     DOMAIN,
     CONF_HOLIDAY_WEEKDAYS,
@@ -42,6 +46,7 @@ from .coordinator import SmartShutterCoordinator
 from .executor import SchedulerManager
 from .websocket_api import async_register_websocket_commands
 from .shutter_management import async_cleanup_removed_shutters
+from .temporal_exceptions import prune_exception_history
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,6 +95,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Sets up a Smart-Shutter-Config-Entry."""
     hass.data.setdefault(DOMAIN, {})
 
+    _prune_expired_exception_history(hass, entry, dt_util.now().date())
+
     async_cleanup_removed_shutters(hass, entry)
     coordinator = SmartShutterCoordinator(hass, entry)
     scheduler_manager = SchedulerManager(hass, coordinator)
@@ -119,12 +126,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     entry.async_on_unload(scheduler_manager.stop)
+    entry.async_on_unload(async_track_time_change(
+        hass,
+        lambda now: _async_prune_expired_exception_history(hass, entry, now),
+        hour=0, minute=0, second=1,
+    ))
 
     _async_register_services(hass)
     await _async_register_frontend(hass)
     _async_register_websocket_api(hass)
 
     return True
+
+
+def _prune_expired_exception_history(hass: HomeAssistant, entry: ConfigEntry, today: date) -> bool:
+    """Trim only old, inactive history while retaining all usable exceptions."""
+    _, changed = prune_exception_history(hass, entry, today, MAX_RETAINED_EXPIRED_TEMPORAL_EXCEPTIONS)
+    return changed
+
+
+async def _async_prune_expired_exception_history(hass: HomeAssistant, entry: ConfigEntry, now) -> None:
+    """Prune history after the Home Assistant local date changes."""
+    _prune_expired_exception_history(hass, entry, now.date())
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -151,6 +174,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reloads the entry when options change (relevant from version 0.2 onward)."""
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get(DATA_COORDINATOR)
+    if coordinator is not None and hasattr(coordinator, "options_snapshot"):
+        before = {k: v for k, v in coordinator.options_snapshot.items() if k != CONF_TEMPORAL_EXCEPTIONS}
+        after = {k: v for k, v in entry.options.items() if k != CONF_TEMPORAL_EXCEPTIONS}
+        if (before == after and coordinator.data_snapshot == entry.data
+                and coordinator.options_snapshot.get(CONF_TEMPORAL_EXCEPTIONS) != entry.options.get(CONF_TEMPORAL_EXCEPTIONS)):
+            coordinator.options_snapshot = dict(entry.options)
+            # These rules create no entities. Re-arm directly so editing/deleting
+            # a pause never invokes the startup catch-up for past appointments.
+            async_dispatcher_send(hass, f"{SIGNAL_RECOMPUTE}_{entry.entry_id}")
+            return
     await hass.config_entries.async_reload(entry.entry_id)
 
 
