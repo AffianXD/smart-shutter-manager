@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from datetime import date
 
 import voluptuous as vol
 
@@ -1040,8 +1041,17 @@ async def handle_save_shutter_areas(hass, connection, msg):
             shutter_areas[entity_id] = area_ids
 
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    today = dt_util.now().date()
+    relevant_exceptions = []
+    for rule in coordinator.temporal_exceptions:
+        try:
+            expired = date.fromisoformat(rule["end_date"]) < today
+        except (KeyError, TypeError, ValueError):
+            expired = False
+        if not expired:
+            relevant_exceptions.append(rule)
     conflicts = conflicting_exception_pairs(
-        coordinator.temporal_exceptions, coordinator, shutter_areas
+        relevant_exceptions, coordinator, shutter_areas
     )
     if conflicts:
         connection.send_result(msg["id"], {

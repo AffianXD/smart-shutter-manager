@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.28.2
+
+- Ignore expired date-based exceptions when validating shutter area changes, so historical rules do not block new assignments.
+
 ## v0.28.1
 
 - Require each branch push and pull request to increase the integration version

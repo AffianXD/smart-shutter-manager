@@ -242,7 +242,8 @@ async def test_conflicting_times_do_not_mutate_or_leak_host_targets_to_guest(has
     assert coord.entry.options == before
 
 
-async def test_area_membership_change_cannot_create_overlapping_timed_exceptions(hass):
+async def test_area_membership_change_cannot_create_overlapping_timed_exceptions(hass, monkeypatch):
+    monkeypatch.setattr(ws.dt_util, "now", lambda: datetime(2026, 10, 14, 12, tzinfo=BERLIN))
     first = rule(id="first", mode="times", cover_ids=[], area_ids=["guest"], open_time="09:00")
     second = rule(id="second", mode="times", cover_ids=[], area_ids=["host"], open_time="10:00")
     coord = coordinator(hass, [first, second])
@@ -262,6 +263,29 @@ async def test_area_membership_change_cannot_create_overlapping_timed_exceptions
         "validation_error": "conflicting_temporal_exceptions",
     }
     assert coord.entry.options == before
+
+
+async def test_expired_area_exceptions_do_not_block_membership_change(hass, monkeypatch):
+    now = datetime(2026, 10, 6, 12, tzinfo=BERLIN)
+    monkeypatch.setattr(ws.dt_util, "now", lambda: now)
+    first = rule(id="old_guest", start_date="2026-09-01", end_date="2026-09-02",
+                 mode="times", cover_ids=[], area_ids=["guest"], open_time="09:00")
+    second = rule(id="old_host", start_date="2026-09-01", end_date="2026-09-02",
+                  mode="times", cover_ids=[], area_ids=["host"], open_time="10:00")
+    coord = coordinator(hass, [first, second])
+    conn = connection()
+    updated_areas = {"cover.bedroom": ["guest", "host"], "cover.office": ["host"]}
+
+    await invoke(
+        hass,
+        ws.handle_save_shutter_areas,
+        conn,
+        type="smart_shutter/save_shutter_areas",
+        shutter_areas=updated_areas,
+    )
+
+    assert conn.send_result.call_args.args[1] == {"success": True}
+    assert coord.entry.options["shutter_areas"] == updated_areas
 
 
 async def test_pause_blocks_execution_warning_and_restart_catch_up(hass, monkeypatch):
