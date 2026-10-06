@@ -1,9 +1,42 @@
 # Smart Shutter Manager development
 
+For release-relevant changes to the integration package or its user-facing
+release documentation, increase the integration version in
+`custom_components/smart_shutter/manifest.json` and add a non-empty matching
+`## vX.Y.Z` entry to `CHANGELOG.md`, following `CONTRIBUTING.md`. Repository-only
+changes such as CI, developer scripts, agent guidance, and test-only updates do
+not need an integration version bump. A historical changelog backfill is an
+explicit exception: keep the current manifest version unchanged and use a
+commit subject containing `backfill vX.Y.Z`. Run the local pre-commit gate
+against the push base; CI checks branch pushes and pull requests using the same
+rules.
+
 Use `.agents/skills/smart-shutter-dev/SKILL.md` for local HA development and UI validation.
 Agents use their own Dev instance and worktree. Never operate another agent's
 instance or the existing `xenodochial_pike` installation. Only verified virtual
 `codex_ui_test` covers may be controlled; never control real covers.
+
+## Before a commit
+
+1. Inspect the complete diff, including untracked files, against the intended
+   push base. Check that the change matches the request, contains no accidental
+   files or secrets, and has tests appropriate to its behavior.
+2. Run the mechanical gate with the proposed commit subject:
+   ```sh
+   python -m scripts.pre_commit_gate \
+     --base-ref <push-base> \
+     --default-branch-ref <default-branch> \
+     --subject "<type(scope): clear summary>"
+   ```
+   For a historical changelog backfill, also pass `--backfill-version X.Y.Z`
+   and include `backfill vX.Y.Z` in the subject. Do not infer backfill intent
+   only from a branch name or silently turn a historical version into a new
+   release.
+3. Review the SemVer impact, changelog accuracy, test coverage, and whether the
+   subject makes the change easy to find later. Fix failures and rerun the
+   affected checks. Report the proposed subject and check results before commit.
+4. Do not create a commit unless the user explicitly asks. GitHub Actions runs
+   its full validation after a push; the local gate is the pre-commit check.
 
 ## UI changes before a commit
 
@@ -31,6 +64,3 @@ resolved and no follow-up work is pending, clean only this worktree's Dev instan
 with `make dev-clean AGENT=<agent> CONFIRM=yes`; this lifecycle cleanup is
 authorized. Reset still requires explicit confirmation. Never clean another
 agent's instance or use `--all` as routine feature cleanup.
-
-Before every push, increase the integration version and add the matching
-versioned entry to `CHANGELOG.md`; follow the SemVer policy in `CONTRIBUTING.md`.
