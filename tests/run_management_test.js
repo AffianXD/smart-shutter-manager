@@ -91,6 +91,33 @@ async function main() {
     await card.locator('[data-settings-nav="settings-shutters"]').click();
     await name("cover.testroom").waitFor();
     assert.equal(await card.locator("h2").textContent(), "Rollläden verwalten");
+    const infoButton = card.locator("[data-info-toggle]").first();
+    assert.equal(await infoButton.evaluate((button) => !!button.closest(".ssm-info-heading-row-h2")), true,
+      "The info control sits in the title row beside its heading");
+    const infoPopover = card.locator('[role="tooltip"]').first();
+    assert.equal(await infoButton.getAttribute("aria-label"), "Weitere Informationen");
+    assert.equal(await infoButton.getAttribute("aria-expanded"), "false");
+    assert.equal(await infoPopover.isHidden(), true);
+    await infoButton.click();
+    assert.equal(await infoButton.getAttribute("aria-expanded"), "true");
+    assert.match(await infoPopover.textContent(), /Rollläden auswählen/);
+    const desktopPopoverBounds = await infoPopover.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const cardRect = el.getRootNode().querySelector("ha-card").getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+        width: window.innerWidth, height: window.innerHeight,
+        cardLeft: cardRect.left, cardRight: cardRect.right };
+    });
+    assert.ok(desktopPopoverBounds.left >= 0 && desktopPopoverBounds.right <= desktopPopoverBounds.width);
+    assert.ok(desktopPopoverBounds.top >= 0 && desktopPopoverBounds.bottom <= desktopPopoverBounds.height);
+    assert.ok(desktopPopoverBounds.left >= desktopPopoverBounds.cardLeft && desktopPopoverBounds.right <= desktopPopoverBounds.cardRight);
+    await page.keyboard.press("Escape");
+    assert.equal(await infoButton.getAttribute("aria-expanded"), "false");
+    assert.equal(await infoPopover.isHidden(), true);
+    assert.equal(await infoButton.evaluate((el) => el.getRootNode().activeElement === el), true);
+    await infoButton.click();
+    await card.locator("h2").click();
+    assert.equal(await infoPopover.isHidden(), true, "Clicking outside closes the popover");
     assert.equal(await card.locator("[data-save-covers], [data-save-rename]").count(), 0);
     assert.equal(await checkbox("cover.missing").isChecked(), true);
     assert.equal(await name("cover.newroom").isDisabled(), true);
@@ -167,6 +194,23 @@ async function main() {
     assert.equal(await card.locator("h2").textContent(), "Manage shutters");
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await card.locator(".body").evaluate((el) => el.scrollWidth <= el.clientWidth), true);
+    const mobileInfoButton = card.locator("[data-info-toggle]").first();
+    const mobileInfoPopover = card.locator('[role="tooltip"]').first();
+    assert.equal(await mobileInfoButton.getAttribute("aria-label"), "More information");
+    await mobileInfoButton.click();
+    assert.equal(await mobileInfoButton.getAttribute("aria-expanded"), "true");
+    const mobilePopoverBounds = await mobileInfoPopover.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const cardRect = el.getRootNode().querySelector("ha-card").getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+        width: window.innerWidth, height: window.innerHeight,
+        cardLeft: cardRect.left, cardRight: cardRect.right };
+    });
+    assert.ok(mobilePopoverBounds.left >= 0 && mobilePopoverBounds.right <= mobilePopoverBounds.width);
+    assert.ok(mobilePopoverBounds.top >= 0 && mobilePopoverBounds.bottom <= mobilePopoverBounds.height);
+    assert.ok(mobilePopoverBounds.left >= mobilePopoverBounds.cardLeft && mobilePopoverBounds.right <= mobilePopoverBounds.cardRight);
+    await page.evaluate(() => document.body.click());
+    assert.equal(await mobileInfoPopover.isHidden(), true, "An outside click dismisses the popover");
     await name("cover.testroom").fill("");
     await page.waitForFunction(() => window.__names["cover.testroom"] === "");
     await idle();
