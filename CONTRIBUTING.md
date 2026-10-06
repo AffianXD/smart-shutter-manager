@@ -22,9 +22,11 @@ release-relevant files, and use a commit subject containing
 `backfill vX.Y.Z`.
 
 CI checks version and changelog changes on branch pushes and pull requests.
-Pushing a matching `vX.Y.Z` tag publishes a GitHub Release after all validation
-jobs pass. Release tags must match the manifest version and be higher than
-previous release tags.
+When a higher integration version reaches the default branch, the workflow
+creates its matching `vX.Y.Z` tag and GitHub Release after all validation jobs
+pass. Pushing a matching `vX.Y.Z` tag manually also publishes a GitHub Release.
+Release tags must match the manifest version and be higher than previous
+release tags.
 
 ## Pre-commit review
 
