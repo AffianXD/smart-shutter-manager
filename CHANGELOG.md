@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased: v0.27.0
+
+- Add date-based exceptions to pause opening/closing or set alternate times for
+  selected shutters and areas, using inclusive dates in Home Assistant's time
+  zone. Area rules follow current membership, manual control remains available,
+  and normal schedules resume after an exception without catch-up movements.
+- Show exceptions in settings and per-shutter details, validate overlapping
+  alternate times, and retain the ten most recent expired entries for review or
+  reactivation. Prune older history at local midnight and during setup.
+
 ## Unreleased: v0.26.0
 
 - Add an interactive first-run wizard for schedule times, fixed or solar
