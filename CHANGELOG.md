@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased: v0.28.0
+## v0.28.1
+
+- Require each branch push and pull request to increase the integration version
+  and add a matching changelog entry, including documentation, CI, and
+  refactoring changes.
+- Publish GitHub Releases automatically from matching version tags after the
+  complete validation workflow passes.
+
+## v0.28.0
 
 - Replace long explanatory paragraphs with compact, accessible info popovers
   across settings, areas, schedules, triggers, sun-position rules, and managed
@@ -9,7 +17,7 @@
   keyboard dismissal, focus restoration, outside-click dismissal, and responsive
   positioning on desktop and mobile.
 
-## Unreleased: v0.27.0
+## v0.27.0
 
 - Add date-based exceptions to pause opening/closing or set alternate times for
   selected shutters and areas, using inclusive dates in Home Assistant's time
@@ -19,7 +27,7 @@
   alternate times, and retain the ten most recent expired entries for review or
   reactivation. Prune older history at local midnight and during setup.
 
-## Unreleased: v0.26.0
+## v0.26.0
 
 - Add an interactive first-run wizard for schedule times, fixed or solar
   triggers, target positions, optional holidays and areas, and a seven-day
@@ -28,18 +36,18 @@
   100% default opening position, and route the completed setup's preview to the
   dashboard timeline.
 
-## Unreleased: v0.25.0
+## v0.25.0
 
 - Add configurable dashboard shortcuts for navigation, cover actions, and
   automations.
 
-## Unreleased: v0.24.0
+## v0.24.0
 
 - Add per-shutter notification settings to inherit area/global recipients, turn
   notifications off, or choose a custom service. Apply routing to movement,
   frost, pre-close, and sun-rule notifications.
 
-## Unreleased: v0.23.0
+## v0.23.0
 
 - Add optional summer/winter schedules selected by daylight saving time in
   Home Assistant's timezone, globally and per shutter.
@@ -54,14 +62,14 @@
 - Cover native restoration, DST gaps/folds, individual inheritance, disabled
   behavior, and card interactions with simulated covers.
 
-## Unreleased: v0.22.1
+## v0.22.1
 
 - Unify add, remove, and rename in one admin-only shutter-management view with
   automatic saving and visible save status.
 - Retry failed saves, keep temporarily missing managed covers selectable, and
   preserve the original cover entities when managed shutters are removed.
 
-## Unreleased: v0.22.0
+## v0.22.0
 
 - Add admin-only "Manage shutters" to the Smart Shutter settings menu and
   integration options flow, with selection of existing supported covers.
@@ -73,7 +81,7 @@
 - Reload through the existing config-entry listener and refresh the card after
   saving. Add backend and browser coverage for management and access control.
 
-## Unreleased: v0.21.1
+## v0.21.1
 
 - Localize movement actions, triggers, default notification templates, frost
   messages, sun-rule messages, and early-warning buttons in German.
@@ -85,7 +93,7 @@
 - Add backend regression coverage for German, English fallback, custom and
   invalid templates, notification buttons, and next-action attributes.
 
-## Unreleased: v0.21.0
+## v0.21.0
 
 This is the first public repository release candidate. It packages the
 existing Smart Shutter Manager integration and bundled dashboard card from

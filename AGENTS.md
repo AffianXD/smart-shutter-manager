@@ -31,3 +31,6 @@ resolved and no follow-up work is pending, clean only this worktree's Dev instan
 with `make dev-clean AGENT=<agent> CONFIRM=yes`; this lifecycle cleanup is
 authorized. Reset still requires explicit confirmation. Never clean another
 agent's instance or use `--all` as routine feature cleanup.
+
+Before every push, increase the integration version and add the matching
+versioned entry to `CHANGELOG.md`; follow the SemVer policy in `CONTRIBUTING.md`.

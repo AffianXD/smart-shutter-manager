@@ -5,7 +5,7 @@ and controls existing `cover` entities. It includes a dashboard card, schedule
 profiles, sun position rules, frost protection, notifications, and area based
 settings. It does not replace the cover integration for your devices.
 
-> **Release status:** v0.28.0 is being prepared. The repository history was
+> **Release status:** v0.28.1 is being prepared. The repository history was
 > reconstructed from v0.20.2 after a workspace reset. Local regression tests
 > pass; public CI and installation smoke checks remain pending.
 

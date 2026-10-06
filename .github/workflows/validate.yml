@@ -67,3 +67,68 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+
+  version-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Check version and changelog on branch pushes
+        if: >-
+          github.event_name == 'push' && github.event.deleted != true &&
+          !startsWith(github.ref, 'refs/tags/')
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA="$(git merge-base "$HEAD_SHA" "origin/$DEFAULT_BRANCH" || true)"
+          fi
+          python scripts/check_version_changelog.py "$BASE_SHA" "$HEAD_SHA"
+      - name: Check version and changelog on pull requests
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python scripts/check_version_changelog.py "$BASE_SHA" "$HEAD_SHA"
+      - name: Check release tag against integration manifest
+        if: >-
+          github.event_name == 'push' && github.event.deleted != true &&
+          startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/check_release_tag.py "$RELEASE_TAG"
+
+  publish-release:
+    if: >-
+      github.event_name == 'push' && github.event.deleted != true &&
+      startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - backend
+      - home-assistant-compatibility
+      - card
+      - hassfest
+      - hacs
+      - version-policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; leaving it unchanged."
+          else
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
