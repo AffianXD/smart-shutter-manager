@@ -660,6 +660,14 @@ async function main() {
     !!document.getElementById("card").shadowRoot.querySelector('[data-area-field="sun_elevation_hysteresis"]')
   );
   check("Sonnenstand-UI: 'Erweiterte Optionen' Klick blendet Hysterese-Feld ein", sunAdvancedState);
+  const infoLayoutState = await page.evaluate(() => {
+    const body = document.getElementById("card").shadowRoot.querySelector(".body");
+    const sectionInfo = body.querySelector(".ssm-info-section-row > .ssm-info-control");
+    const hysteresis = body.querySelector('[data-area-field="sun_elevation_hysteresis"]');
+    const fieldInfo = hysteresis && hysteresis.closest(".control-row").querySelector(".ssm-info-inline-label .ssm-info-control");
+    return { section: !!sectionInfo, field: !!fieldInfo };
+  });
+  check("Erklärungs-Icons stehen neben Abschnitts- und Feldbezeichnungen", infoLayoutState.section && infoLayoutState.field);
 
   // Zurueck auf eine Kompass-Richtung wechseln, bevor der Bereich unten
   // gespeichert wird, damit der bestehende Speicher-Test (weiter unten)
@@ -860,6 +868,20 @@ async function main() {
     return card.shadowRoot.querySelector(".body").textContent;
   });
   check("English card: area labels use English", englishArea.includes("Areas") && englishArea.includes("Apply to members") && !englishArea.includes("Bereiche verwalten"));
+
+  const externalTriggerInfoLayout = await page.evaluate(() => {
+    const card = document.getElementById("card");
+    card._view = "settings-triggers";
+    card._render();
+    const button = card.shadowRoot.querySelector(".body [data-info-toggle]");
+    const headingRow = button && button.closest(".ssm-info-heading-row-h2");
+    return {
+      heading: headingRow && headingRow.querySelector("h2") && headingRow.querySelector("h2").textContent,
+      containsInfo: !!(headingRow && headingRow.querySelector(".ssm-info-control")),
+    };
+  });
+  check("Externe-Auslöser-Icon steht in derselben Zeile rechts neben der Überschrift",
+    externalTriggerInfoLayout.heading === "External Triggers" && externalTriggerInfoLayout.containsInfo);
 
   const germanOverview = await page.evaluate(() => {
     const card = document.getElementById("card");

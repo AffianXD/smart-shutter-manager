@@ -140,6 +140,27 @@ async function main() {
       });
       await assertStat(2, "Automation disabled");
     });
+    await check("Restricted users get a short inline prompt and the full automation explanation behind info", async () => {
+      await page.evaluate(() => {
+        const card = document.getElementById("card");
+        card._restricted = true;
+        card._view = "overview";
+        card._render();
+      });
+      const hint = page.locator("smart-shutter-card >> .ssm-inline-hint");
+      assert.equal(await hint.locator(":scope > .ssm-inline-hint-label").textContent(), "Use your area's automation switches.");
+      const infoButton = hint.locator("[data-info-toggle]");
+      const popover = hint.locator('[role="tooltip"]');
+      assert.equal(await infoButton.getAttribute("aria-label"), "More information");
+      assert.equal(await popover.isHidden(), true);
+      await infoButton.click();
+      assert.match(await popover.textContent(), /global automation control affects ALL shutters/);
+      await page.evaluate(() => {
+        const card = document.getElementById("card");
+        card._restricted = false;
+        card._render();
+      });
+    });
     await check("State updates keep one registry subscription, removed cards unsubscribe", async () => {
       assert.equal(await page.evaluate(() => window.__registrySubscriptions), 1);
       await page.evaluate(() => document.getElementById("card").remove());

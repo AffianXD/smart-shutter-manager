@@ -518,11 +518,23 @@
 
     connectedCallback() {
       this._subscribeDeviceRegistry();
+      this._installInfoPopoverListeners();
     }
 
     disconnectedCallback() {
       this._stopDeviceRegistrySubscription();
       this._deviceRegistryConnection = null;
+      if (this._infoOutsideClickHandler && this._infoListenersAttached) {
+        document.removeEventListener("click", this._infoOutsideClickHandler, true);
+      }
+      if (this._infoEscapeHandler && this._infoListenersAttached && this.shadowRoot) {
+        this.shadowRoot.removeEventListener("keydown", this._infoEscapeHandler);
+      }
+      if (this._infoPositionHandler && this._infoListenersAttached) {
+        document.removeEventListener("scroll", this._infoPositionHandler, true);
+        window.removeEventListener("resize", this._infoPositionHandler);
+      }
+      this._infoListenersAttached = false;
       if (this._managedCoversSaveTimer) {
         clearTimeout(this._managedCoversSaveTimer);
         this._managedCoversSaveTimer = null;
@@ -1218,12 +1230,45 @@
         </ha-card>
       `;
       this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
+      this._installInfoPopoverListeners();
       this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
       this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
       this.shadowRoot.addEventListener("dragstart", (ev) => this._onDragStart(ev));
       this.shadowRoot.addEventListener("dragover", (ev) => this._onDragOver(ev));
       this.shadowRoot.addEventListener("drop", (ev) => this._onDrop(ev));
       this.shadowRoot.addEventListener("dragend", (ev) => this._onDragEnd(ev));
+    }
+
+    _installInfoPopoverListeners() {
+      if (!this._infoOutsideClickHandler) {
+        this._infoOutsideClickHandler = (ev) => {
+          const trigger = this.shadowRoot.querySelector('[data-info-toggle][aria-expanded="true"]');
+          if (!trigger) return;
+          const popover = this.shadowRoot.getElementById(trigger.getAttribute("aria-controls"));
+          const path = ev.composedPath();
+          if (!path.includes(trigger) && !path.includes(popover)) this._closeInfoPopover(trigger);
+        };
+        this._infoEscapeHandler = (ev) => {
+          if (ev.key !== "Escape") return;
+          const trigger = this.shadowRoot.querySelector('[data-info-toggle][aria-expanded="true"]');
+          if (!trigger) return;
+          ev.preventDefault();
+          this._closeInfoPopover(trigger);
+          trigger.focus();
+        };
+        this._infoPositionHandler = () => {
+          const trigger = this.shadowRoot.querySelector('[data-info-toggle][aria-expanded="true"]');
+          if (!trigger) return;
+          const popover = this.shadowRoot.getElementById(trigger.getAttribute("aria-controls"));
+          if (popover && !popover.hidden) this._positionInfoPopover(trigger, popover);
+        };
+      }
+      if (!this.isConnected || !this.shadowRoot || this._infoListenersAttached) return;
+      document.addEventListener("click", this._infoOutsideClickHandler, true);
+      document.addEventListener("scroll", this._infoPositionHandler, true);
+      window.addEventListener("resize", this._infoPositionHandler);
+      this.shadowRoot.addEventListener("keydown", this._infoEscapeHandler);
+      this._infoListenersAttached = true;
     }
 
     // Aggregates the motion state of multiple roller shutters into one
@@ -1462,6 +1507,51 @@
           font-size: 0.85em; color: var(--ssm-muted); background: var(--ssm-card-bg);
           border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); padding: 10px 12px; margin: 12px 0;
         }
+        .ssm-info-control { display: inline-flex; vertical-align: middle; }
+        .ssm-info-heading-row, .ssm-info-section-row, .ssm-info-label-row, .ssm-info-inline-label {
+          display: flex; align-items: center; gap: 6px; min-width: 0;
+        }
+        .ssm-info-heading-row-h2 { margin: 0 0 12px; }
+        .ssm-info-heading-row-h3 { margin: 22px 0 10px; }
+        .ssm-info-heading-row h2, .ssm-info-heading-row h3 {
+          flex: 0 1 auto; max-width: calc(100% - 36px); min-width: 0; margin: 0;
+        }
+        .ssm-info-section-row {
+          width: 100%; box-sizing: border-box; margin: 18px 0 4px;
+          border-top: 1px solid var(--ssm-border);
+        }
+        .ssm-info-section-row .section-toggle {
+          flex: 0 1 auto; width: auto; max-width: calc(100% - 66px); min-width: 0;
+          margin: 0; padding: 10px 2px; border-top: 0; justify-content: flex-start;
+          white-space: normal;
+        }
+        .ssm-info-section-row .ssm-info-control { flex: 0 0 auto; }
+        .ssm-section-toggle-chevron {
+          display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+          margin: 0 0 0 auto; padding: 10px 2px; border: 0; background: none;
+          color: var(--ssm-muted); cursor: pointer;
+        }
+        .ssm-section-toggle-chevron ha-icon { --mdc-icon-size: 20px; }
+        .ssm-info-label-row { margin-bottom: 5px; }
+        .form-field .ssm-info-label-row label { flex: 0 1 auto; min-width: 0; margin: 0; }
+        .ssm-info-inline-label { min-width: 140px; }
+        .control-row .ssm-info-inline-label label { min-width: 0; }
+        .ssm-info-trigger {
+          display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+          padding: 0; border: 1px solid var(--ssm-border); border-radius: 50%;
+          background: var(--ssm-card-bg); color: var(--ssm-muted); cursor: pointer;
+        }
+        .ssm-info-trigger ha-icon { --mdc-icon-size: 18px; }
+        .ssm-info-trigger:hover, .ssm-info-trigger:focus-visible, .ssm-info-trigger[aria-expanded="true"] {
+          color: var(--primary-color); border-color: var(--primary-color); outline-color: var(--primary-color);
+        }
+        .ssm-info-popover {
+          position: fixed; z-index: 1000; display: block; box-sizing: border-box;
+          padding: 12px 14px; overflow: auto; border: 1px solid var(--ssm-border);
+          border-radius: var(--ssm-radius); background: var(--ssm-card-bg); color: var(--primary-text-color);
+          box-shadow: var(--ssm-shadow-hover); font-size: 0.9em; line-height: 1.45; white-space: normal;
+        }
+        .ssm-info-popover[hidden] { display: none; }
         .error { color: var(--error-color, #c62828); }
         .settings-menu { display: flex; flex-direction: column; gap: 8px; }
         .settings-menu-item {
@@ -1655,9 +1745,10 @@
         .ssm-automation-card { padding: 4px 14px; margin-top: 14px; }
         .ssm-automation-card .control-row { margin: 10px 0; }
         .ssm-inline-hint {
-          display: flex; align-items: flex-start; gap: 8px; padding: 12px 2px; font-size: 0.85em; color: var(--ssm-muted);
+          display: flex; align-items: center; gap: 8px; padding: 12px 2px; font-size: 0.85em; color: var(--ssm-muted);
         }
-        .ssm-inline-hint ha-icon { --mdc-icon-size: 18px; flex-shrink: 0; margin-top: 1px; }
+        .ssm-inline-hint-label { min-width: 0; }
+        .ssm-inline-hint .ssm-info-control { flex-shrink: 0; }
         .ssm-nav-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
         .ssm-nav-card {
           display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left;
@@ -1684,6 +1775,11 @@
     }
 
     _onClick(ev) {
+      const infoTrigger = ev.target.closest("[data-info-toggle]");
+      if (infoTrigger) {
+        this._toggleInfoPopover(infoTrigger);
+        return;
+      }
       const navBtn = ev.target.closest("[data-nav]");
       if (navBtn) {
         this._haptic("selection");
@@ -2317,10 +2413,136 @@
         body.innerHTML = this._renderAreaEdit();
       }
 
+      this._positionInfoControls(body);
       // Sets current values in form controls (no re-render on every key press)
       this._syncControlValues(body);
       this._mountEntityPickers(body);
       this._localizeDom();
+    }
+
+    _positionInfoControls(root) {
+      root.querySelectorAll(".ssm-info-control").forEach((control) => {
+        const field = control.parentElement && control.parentElement.closest(".form-field");
+        const fieldLabel = field && field.querySelector(":scope > label");
+        if (fieldLabel) {
+          const row = document.createElement("div");
+          row.className = "ssm-info-label-row";
+          fieldLabel.before(row);
+          row.append(fieldLabel, control);
+          return;
+        }
+
+        const previous = control.previousElementSibling;
+        if (!previous) return;
+        if (previous.matches("h2, h3")) {
+          const row = document.createElement("div");
+          row.className = `ssm-info-heading-row ssm-info-heading-row-${previous.tagName.toLowerCase()}`;
+          previous.before(row);
+          row.append(previous, control);
+          return;
+        }
+        if (previous.matches(".section-toggle")) {
+          const row = document.createElement("div");
+          row.className = "ssm-info-section-row";
+          previous.before(row);
+          const chevron = previous.querySelector(":scope > ha-icon");
+          if (chevron) {
+            const chevronButton = document.createElement("button");
+            const sectionKey = previous.getAttribute("data-toggle-area-section");
+            chevronButton.type = "button";
+            chevronButton.className = "ssm-section-toggle-chevron";
+            chevronButton.setAttribute("data-toggle-area-section", sectionKey);
+            chevronButton.setAttribute(
+              "aria-label",
+              (this._language() === "de" ? "Abschnitt umschalten: " : "Toggle section: ") + previous.textContent.trim()
+            );
+            chevronButton.append(chevron);
+            row.append(previous, control, chevronButton);
+          } else {
+            row.append(previous, control);
+          }
+          return;
+        }
+        if (previous.matches(".control-row")) {
+          const label = previous.querySelector(":scope > label");
+          if (!label) return;
+          const row = document.createElement("span");
+          row.className = "ssm-info-inline-label";
+          label.before(row);
+          row.append(label, control);
+        }
+      });
+    }
+
+    _infoHint(text) {
+      const id = `ssm-info-${(this._infoHintIndex = (this._infoHintIndex || 0) + 1)}`;
+      const label = this._language() === "de" ? "Weitere Informationen" : "More information";
+      return `
+        <span class="ssm-info-control">
+          <button class="ssm-info-trigger" type="button" data-info-toggle aria-label="${label}" aria-expanded="false" aria-controls="${id}">
+            <ha-icon icon="mdi:information-outline"></ha-icon>
+          </button>
+          <span class="ssm-info-popover" id="${id}" role="tooltip" hidden>${this._escapeHtml(text)}</span>
+        </span>
+      `;
+    }
+
+    _renderHint(text) {
+      if (!text) return "";
+      return String(text).trim().length >= 110
+        ? this._infoHint(text)
+        : `<div class="meta">${text}</div>`;
+    }
+
+    _toggleInfoPopover(trigger) {
+      if (trigger.getAttribute("aria-expanded") === "true") {
+        this._closeInfoPopover(trigger);
+        return;
+      }
+      const currentlyOpen = this.shadowRoot.querySelector('[data-info-toggle][aria-expanded="true"]');
+      if (currentlyOpen) this._closeInfoPopover(currentlyOpen);
+
+      const popover = this.shadowRoot.getElementById(trigger.getAttribute("aria-controls"));
+      if (!popover) return;
+      popover.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      trigger.setAttribute("aria-describedby", popover.id);
+      this._positionInfoPopover(trigger, popover);
+    }
+
+    _positionInfoPopover(trigger, popover) {
+      const triggerRect = trigger.getBoundingClientRect();
+      const margin = 12;
+      const cardRect = this.shadowRoot.querySelector("ha-card").getBoundingClientRect();
+      const minLeft = Math.max(margin, cardRect.left + margin);
+      const maxRight = Math.min(window.innerWidth - margin, cardRect.right - margin);
+      const width = Math.min(320, Math.max(0, maxRight - minLeft));
+      popover.style.width = `${width}px`;
+      popover.style.maxHeight = `${Math.max(120, window.innerHeight - margin * 2)}px`;
+      const popoverRect = popover.getBoundingClientRect();
+      const left = Math.min(
+        Math.max(minLeft, triggerRect.left + triggerRect.width / 2 - popoverRect.width / 2),
+        maxRight - popoverRect.width
+      );
+      let top = triggerRect.bottom + 8;
+      if (top + popoverRect.height > window.innerHeight - margin) {
+        top = Math.max(margin, triggerRect.top - popoverRect.height - 8);
+      }
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    }
+
+    _closeInfoPopover(trigger) {
+      const popover = this.shadowRoot.getElementById(trigger.getAttribute("aria-controls"));
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.removeAttribute("aria-describedby");
+      if (popover) {
+        popover.hidden = true;
+        popover.style.removeProperty("left");
+        popover.style.removeProperty("top");
+        popover.style.removeProperty("width");
+        popover.style.removeProperty("max-height");
+      }
     }
 
     _syncControlValues(root) {
@@ -2434,6 +2656,7 @@
     _renderOverview() {
       const ge = this._model.globalEntities;
       const areas = (this._backendConfig && this._backendConfig.custom_areas) || [];
+      const de = this._language() === "de";
       const moreExpanded = !!this._dashMoreActionsExpanded;
       const dashMotion = this._groupMotionState(this._model.shutters.map((s) => s.coverEntityId));
       return `
@@ -2451,7 +2674,9 @@
           <div class="ssm-card ssm-automation-card">
             ${
               this._isRestricted()
-                ? `<div class="ssm-inline-hint"><ha-icon icon="mdi:information-outline"></ha-icon><span>The global automation control affects ALL shutters in the house and is therefore only visible to admins. Use the automation switches in your area below.</span></div>`
+                ? `<div class="ssm-inline-hint"><span class="ssm-inline-hint-label">${de ? "Nutze die Automatikschalter in deinem Bereich." : "Use your area's automation switches."}</span>${this._infoHint(de
+                  ? "Die globale Automatiksteuerung wirkt sich auf ALLE Rollläden im Haus aus und ist deshalb nur für Administratoren sichtbar. Nutze stattdessen die Automatikschalter in deinem Bereich weiter unten."
+                  : "The global automation control affects ALL shutters in the house and is therefore only visible to admins. Use the automation switches in your area below.")}</div>`
                 : `
                   ${this._renderAutomationToggle(ge.automation.open, "Automatik Öffnen (alle Rollläden)")}
                   ${this._renderAutomationToggle(ge.automation.close, "Automatik Schließen (alle Rollläden)")}
@@ -3144,20 +3369,15 @@
       // advanced features; automatically expanded as soon as
       // ADD THIS shutter already exists an external trigger.
       const profilesKey = `detail-profiles-${s.coverEntityId}`;
-      if (this._areaSectionExpanded[profilesKey] === undefined) {
-        this._areaSectionExpanded[profilesKey] = false;
-      }
-      const profilesOpen = this._areaSectionExpanded[profilesKey];
-      let html = `
-        <button class="section-toggle" data-toggle-area-section="${profilesKey}" type="button">
-          <span>Custom profiles</span>
-          <ha-icon icon="${profilesOpen ? "mdi:chevron-up" : "mdi:chevron-down"}"></ha-icon>
-        </button>
-      `;
+      const profilesSection = this._sectionToggle(
+        profilesKey,
+        "Custom profiles",
+        false,
+        "Apply to ALL shutters (central time exceptions) - editable here directly, without switching views."
+      );
+      const profilesOpen = profilesSection.isOpen;
+      let html = profilesSection.headerHtml;
       if (profilesOpen) {
-      html += `
-        <div class="hint">Apply to ALL shutters (central time exceptions) - editable here directly, without switching views.</div>
-      `;
       if (!schedules.length) {
         html += `<p class="empty">No custom profiles created yet.</p>`;
       } else {
@@ -3348,9 +3568,7 @@
             <option value="local"${mode === SOURCE_OPTION_LOCAL ? " selected" : ""}>${this._selectOptionLabel("local")}</option>
           </select>
         </div>
-        <div class="hint">
-          "Global" takes over trigger type, sun offset, and target position completely from the global settings. "Individual" allows custom values for this shutter (still separable per open/close and aspect).
-        </div>
+        ${this._infoHint('"Global" takes over trigger type, sun offset, and target position completely from the global settings. "Individual" allows custom values for this shutter (still separable per open/close and aspect).')}
       `;
 
       if (mode === "global") {
@@ -3522,7 +3740,7 @@
           <div class="entity-picker-slot" data-entity-picker="${key}" data-picker-attr="${dataAttr}"
                data-value="${value || ""}" data-domains="${(domains || []).join(",")}"
                ${includeEntities ? `data-entities="${includeEntities.join(",")}"` : ""}></div>
-          ${hint ? `<div class="meta">${hint}</div>` : ""}
+          ${this._renderHint(hint)}
         </div>
       `;
     }
@@ -3583,7 +3801,7 @@
         <div class="form-field">
           <label>${label}</label>
           <input type="${type}" data-basic-field="${key}" value="${value != null ? value : ""}" />
-          ${hint ? `<div class="meta">${hint}</div>` : ""}
+          ${this._renderHint(hint)}
         </div>
       `;
       const entityField = (key, label, value, domains, hint = "") =>
@@ -3592,7 +3810,7 @@
         <div class="form-field">
           <label>${label}</label>
           <textarea data-basic-field="${key}">${value || ""}</textarea>
-          ${hint ? `<div class="meta">${hint}</div>` : ""}
+          ${this._renderHint(hint)}
         </div>
       `;
 
@@ -3774,7 +3992,7 @@
       const areas = (this._backendConfig && this._backendConfig.custom_areas) || [];
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
       html += `<h2>Areas</h2>`;
-      html += `<div class="hint">Custom groups (e.g. Front/Back/North/South) with preset settings. A shutter can belong to multiple areas at the same time. By using "Apply to members", the values are transferred to the individual settings of the assigned shutters. Up/Stop/Down and the automation switch take effect immediately on all members.</div>`;
+      html += this._infoHint('Custom groups (e.g. Front/Back/North/South) with preset settings. A shutter can belong to multiple areas at the same time. By using "Apply to members", the values are transferred to the individual settings of the assigned shutters. Up/Stop/Down and the automation switch take effect immediately on all members.');
 
       if (!areas.length) {
         html += `<p class="empty">No areas created yet.</p>`;
@@ -3816,7 +4034,7 @@
     // Storage for EACH open/close state of the card, not just for
     // area forms - unique key names (z.B. "detail-profiles-...",
     // "notify-templates") prevent collisions between the views.
-    _sectionToggle(key, title, defaultExpanded) {
+    _sectionToggle(key, title, defaultExpanded, infoText = "") {
       if (this._areaSectionExpanded[key] === undefined) {
         this._areaSectionExpanded[key] = !!defaultExpanded;
       }
@@ -3827,7 +4045,7 @@
           <button class="section-toggle" data-toggle-area-section="${key}" type="button">
             <span>${title}</span>
             <ha-icon icon="${isOpen ? "mdi:chevron-up" : "mdi:chevron-down"}"></ha-icon>
-          </button>
+          </button>${infoText ? this._infoHint(infoText) : ""}
         `,
       };
     }
@@ -3885,7 +4103,8 @@
 
       // Uniform expand/collapse pattern for large formular-
       // Sections (unified in v0.19, see _sectionToggle()).
-      const sectionToggle = (key, title, defaultExpanded) => this._sectionToggle(key, title, defaultExpanded);
+      const sectionToggle = (key, title, defaultExpanded, infoText = "") =>
+        this._sectionToggle(key, title, defaultExpanded, infoText);
 
       html += `<h3>Trigger Type (optional)</h3>`;
       html += typeField("open", "Öffnen");
@@ -3903,15 +4122,12 @@
       const sunSection = sectionToggle(
         "sun",
         "Sonnenstand-Regel (optional)",
-        sunEnabled || (existing && existing.sun_azimuth_from !== undefined && existing.sun_azimuth_from !== null)
+        sunEnabled || (existing && existing.sun_azimuth_from !== undefined && existing.sun_azimuth_from !== null),
+        "Automatically moves all members of this area to the target position as soon as the sun shines in from the selected direction AND reaches at least the specified height - e.g. targeted shading when the sun shines directly on this facade. Runs independently of the normal open/close schedule."
       );
       html += sunSection.headerHtml;
       if (sunSection.isOpen) {
-      html += `
-        <div class="hint">
-          Automatically moves all members of this area to the target position as soon as the sun shines in from the selected direction AND reaches at least the specified height - e.g. targeted shading when the sun shines directly on this facade. Runs independently of the normal open/close schedule.
-        </div>
-        <label class="control-row">
+      html += `<label class="control-row">
           <input type="checkbox" data-area-field="sun_position_enabled" ${sunEnabled ? "checked" : ""} />
           <span>Enable</span>
         </label>
@@ -3954,9 +4170,9 @@
         `;
       }
       html += numberField("sun_elevation_min", "Ab welcher Sonnenhöhe auslösen", "°", 0, 90);
-      html += `<div class="meta">0° = Sun on the horizon, 90° = Sun at zenith (noon in summer). Rule of thumb: in the morning/afternoon usually 15-35°, at noon in summer up to 60°+.</div>`;
+      html += this._infoHint("0° = Sun on the horizon, 90° = Sun at zenith (noon in summer). Rule of thumb: in the morning/afternoon usually 15-35°, at noon in summer up to 60°+.");
       html += numberField("sun_position_target", "Zielposition bei Sonnenstand", "%", 0, 100);
-      html += `<div class="meta">Shutter position to which the rule drives when triggered (0% = fully closed, 100% = fully open).</div>`;
+      html += this._infoHint("Shutter position to which the rule drives when triggered (0% = fully closed, 100% = fully open).");
 
       const textAreaField = (key, label, hint, placeholder) => {
         const current = existing && existing[key] ? existing[key] : "";
@@ -3964,7 +4180,7 @@
           <div class="form-field">
             <label>${label}</label>
             <textarea data-area-field="${key}" rows="2" placeholder="${placeholder}">${current}</textarea>
-            <div class="meta">${hint}</div>
+            ${this._infoHint(hint)}
           </div>
         `;
       };
@@ -3981,7 +4197,7 @@
           0,
           20
         );
-        html += `<div class="meta">Prevents repeated triggering when the sun's elevation only slightly fluctuates around the threshold (it will only be reactivated after sufficient distance below the threshold).</div>`;
+        html += this._infoHint("Prevents repeated triggering when the sun's elevation only slightly fluctuates around the threshold (it will only be reactivated after sufficient distance below the threshold).");
 
         html += textAreaField(
           "sun_condition_template",
@@ -4018,7 +4234,7 @@
           1,
           60
         );
-        html += `<div class="meta">Estimated warning time, no exact prediction (the sun position is continuously monitored, not like in the schedule to a fixed known time) - based on the current rate of change in sun height.</div>`;
+        html += this._infoHint("Estimated warning time, no exact prediction (the sun position is continuously monitored, not like in the schedule to a fixed known time) - based on the current rate of change in sun height.");
         html += textAreaField(
           "sun_prenotify_text",
           "Warning text (optional, Jinja template)",
@@ -4031,15 +4247,11 @@
       const notifySection = this._sectionToggle(
         "notify",
         "Benachrichtigungen (optional)",
-        !!(existing && (existing.notify_service || "").trim())
+        !!(existing && (existing.notify_service || "").trim()),
+        "Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used."
       );
       html += notifySection.headerHtml;
       if (notifySection.isOpen) {
-      html += `
-        <div class="hint">
-          Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used.
-        </div>
-      `;
       html += `
         <div class="form-field">
           <label>Notification service for this area</label>
@@ -4051,15 +4263,11 @@
       const frostSection = sectionToggle(
         "frost",
         "Frostschutz (optional)",
-        !!(existing && (existing.inside_temp_sensor || existing.frost_threshold_c !== undefined && existing.frost_threshold_c !== null))
+        !!(existing && (existing.inside_temp_sensor || existing.frost_threshold_c !== undefined && existing.frost_threshold_c !== null)),
+        "Without a custom sensor, a temperature sensor from the same room is used automatically if uniquely assignable - otherwise, the global indoor temperature sensor is used (Settings → Basic Settings)."
       );
       html += frostSection.headerHtml;
       if (frostSection.isOpen) {
-      html += `
-        <div class="hint">
-          Without a custom sensor, a temperature sensor from the same room is used automatically if uniquely assignable - otherwise, the global indoor temperature sensor is used (Settings → Basic Settings).
-        </div>
-      `;
       const autoDetected =
         (this._backendConfig && this._backendConfig.area_auto_temp_sensors && existing
           ? this._backendConfig.area_auto_temp_sensors[existing.id]
@@ -4091,15 +4299,11 @@
         const schedulesSection = sectionToggle(
           "schedules",
           "Eigene Zeitpläne für diesen Bereich",
-          areaSchedules.length > 0
+          areaSchedules.length > 0,
+          'Recurring Time Exceptions ONLY for the shutters in this area (e.g. "Vacation of the holiday home"). Never affects other areas or your own host area. Order = Priority in case of overlaps - the first rule wins.'
         );
         html += schedulesSection.headerHtml;
         if (schedulesSection.isOpen) {
-        html += `
-          <div class="hint">
-            Recurring Time Exceptions ONLY for the shutters in this area (e.g. "Vacation of the holiday home"). Never affects other areas or your own host area. Order = Priority in case of overlaps - the first rule wins.
-          </div>
-        `;
         if (!areaSchedules.length) {
           html += `<p class="empty">No schedules for this area yet.</p>`;
         } else {
@@ -4134,14 +4338,14 @@
 
       if (this._isAdmin()) {
         const assignedUserIdsForToggle = (existing && existing.assigned_ha_user_ids) || [];
-        const accessSection = sectionToggle("access", "Zugriff", assignedUserIdsForToggle.length > 0);
+        const accessSection = sectionToggle(
+          "access",
+          "Zugriff",
+          assignedUserIdsForToggle.length > 0,
+          "HA users who are allowed to see/operate ONLY this area (e.g. Airbnb/tenant access) - typical use case: own, non-admin HA user per rented apartment, who in HA itself is additionally granted (Settings → People → Users) only the entities of that apartment. This area assignment alone does NOT replace HA's own user permissions - it only controls what the Smart-Shutter card displays/provides."
+        );
         html += accessSection.headerHtml;
         if (accessSection.isOpen) {
-        html += `
-          <div class="hint">
-            HA users who are allowed to see/operate ONLY this area (e.g. Airbnb/tenant access) - typical use case: own, non-admin HA user per rented apartment, who in HA itself is additionally granted (Settings → People → Users) only the entities of that apartment. This area assignment alone does NOT replace HA's own user permissions - it only controls what the Smart-Shutter card displays/provides.
-          </div>
-        `;
         const assignedUserIds = (existing && existing.assigned_ha_user_ids) || [];
         if (!this._model.haUsers.length) {
           html += `<div class="hint">No HA users found.</div>`;
@@ -4157,7 +4361,7 @@
         } // Ende accessSection.isOpen
 
         html += `<h3>Members</h3>`;
-        html += `<div class="hint">A shutter can belong to multiple areas at the same time (e.g. "Back" AND "Living rooms") - when applying, the last applied area takes precedence in case of conflicting settings.</div>`;
+        html += this._infoHint('A shutter can belong to multiple areas at the same time (e.g. "Back" AND "Living rooms") - when applying, the last applied area takes precedence in case of conflicting settings.');
         this._model.shutters.forEach((s) => {
           const memberAreaIds = shutterAreas[s.coverEntityId] || [];
           const checked = existing && memberAreaIds.includes(existing.id);
@@ -4189,7 +4393,7 @@
       const conflicts = (this._backendConfig && this._backendConfig.schedule_conflicts) || {};
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
       html += `<h2>Custom profiles</h2>`;
-      html += `<div class="hint">Recurring Time Exceptions, apply to all shutters (can be overwritten locally per shutter). Order = Priority in case of overlaps - the first rule wins.</div>`;
+      html += this._infoHint("Recurring Time Exceptions, apply to all shutters (can be overwritten locally per shutter). Order = Priority in case of overlaps - the first rule wins.");
 
       if (!schedules.length) {
         html += `<p class="empty">No custom profiles created yet.</p>`;
@@ -4765,7 +4969,7 @@
       const areas = (this._backendConfig && this._backendConfig.custom_areas) || [];
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
       html += `<h2>External Triggers</h2>`;
-      html += `<div class="hint">Named rules whose target time is set via service (smart_shutter.set_external_trigger) from an external automation. Always takes precedence over profiles/custom profiles. Can control a single shutter OR an entire area (all members).</div>`;
+      html += this._infoHint("Named rules whose target time is set via service (smart_shutter.set_external_trigger) from an external automation. Always takes precedence over profiles/custom profiles. Can control a single shutter OR an entire area (all members).");
 
       if (!triggers.length) {
         html += `<p class="empty">No external triggers created yet.</p>`;
@@ -4955,9 +5159,9 @@
       if (!this._isAdmin()) return html;
       if (this._managedCoversError) return html + `<div class="hint error">${this._escapeHtml(this._managedCoversError)}</div>`;
       if (!this._managedCovers) return html + `<p>${de ? "Rollläden werden geladen…" : "Loading shutters…"}</p>`;
-      html += `<p class="meta">${de
+      html += this._infoHint(de
         ? "Rollläden auswählen und Namen bearbeiten. Änderungen werden automatisch gespeichert. Ein leeres Namensfeld verwendet den Standardnamen."
-        : "Select shutters and edit their names. Changes are saved automatically. An empty name field uses the default name."}</p>`;
+        : "Select shutters and edit their names. Changes are saved automatically. An empty name field uses the default name.");
       html += `<p class="hint">${de
         ? "Beim Entfernen werden die Smart-Shutter-Einstellungen dieses Rollladens gelöscht. Die ursprüngliche cover-Entität bleibt erhalten."
         : "Removing a shutter deletes its Smart Shutter settings. The original cover entity remains available."}</p>`;

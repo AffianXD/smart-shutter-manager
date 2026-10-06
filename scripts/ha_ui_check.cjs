@@ -40,7 +40,7 @@ async function main() {
   assert.equal(response.ok, true, "Local token refresh succeeds");
   const token = (await response.json()).access_token;
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "de-DE", serviceWorkers: "block" });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "de-DE", hasTouch: true, serviceWorkers: "block" });
   const blocked = [], errors = [];
   await context.addInitScript(({ token, url }) => {
     delete Navigator.prototype.serviceWorker;
@@ -82,18 +82,71 @@ async function main() {
     await page.locator("#ha-launch-screen").waitFor({ state: "hidden", timeout: 30000 });
     await page.screenshot({ path: path.join(output, "overview-desktop.png"), fullPage: true });
     await card.locator('[data-nav="list"]').first().click();
-    assert.equal(await card.locator("[data-open-detail]").count(), 2);
+    const configuredShutters = await card.evaluate(el => el._model.shutters.length);
+    assert.ok(configuredShutters > 0 && configuredShutters <= 3);
+    assert.equal(await card.locator("[data-open-detail]").count(), configuredShutters);
     const ids = await page.evaluate(() => Object.keys(document.querySelector("home-assistant").hass.states).filter(id => id.startsWith("cover.")));
     assert.equal(ids.every(id => virtual.has(id)) && ids.length === 3, true);
     await card.locator('[data-nav="settings"]').click();
     await card.locator('[data-settings-nav="settings-shutters"]').click();
     await card.locator("[data-managed-cover]").first().waitFor();
     assert.equal(await card.locator("[data-managed-cover]").count(), 3);
+    await verifyInfoPopover(page, card, "Rollläden auswählen", path.join(output, "info-popover-desktop.png"));
     await page.screenshot({ path: path.join(output, "management-desktop.png"), fullPage: true });
+
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-triggers"]').click();
+    const externalTriggerInfo = card.locator("[data-info-toggle]").first();
+    await assertInfoBesideHeading(externalTriggerInfo, "Externe Auslöser");
+    await page.screenshot({ path: path.join(output, "external-triggers-desktop.png"), fullPage: true });
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(400);
     assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await assertInfoBesideHeading(externalTriggerInfo, "Externe Auslöser");
+    await externalTriggerInfo.tap();
+    assert.equal(await externalTriggerInfo.getAttribute("aria-expanded"), "true");
+    await assertPopoverInViewport(card.locator('[role="tooltip"]').first());
+    await page.screenshot({ path: path.join(output, "external-triggers-mobile.png"), fullPage: true });
+    await card.locator("h2").tap();
+    assert.equal(await card.locator('[role="tooltip"]').first().isHidden(), true);
+
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-shutters"]').click();
+    await card.locator("[data-managed-cover]").first().waitFor();
+    const mobileTrigger = card.locator("[data-info-toggle]").first();
+    const mobilePopover = card.locator('[role="tooltip"]').first();
+    await mobileTrigger.tap();
+    assert.equal(await mobileTrigger.getAttribute("aria-expanded"), "true");
+    await assertPopoverInViewport(mobilePopover);
+    await page.screenshot({ path: path.join(output, "info-popover-mobile.png"), fullPage: true });
+    await card.locator("h2").tap();
+    assert.equal(await mobilePopover.isHidden(), true, "Outside tap closes the information popover");
     await page.screenshot({ path: path.join(output, "management-mobile.png"), fullPage: true });
+
+    await card.evaluate(el => { el._restricted = true; el._view = "overview"; el._render(); });
+    const guestHint = card.locator(".ssm-inline-hint");
+    const guestInfo = guestHint.locator("[data-info-toggle]");
+    const guestPopover = guestHint.locator('[role="tooltip"]');
+    assert.equal(await guestHint.locator(".ssm-inline-hint-label").textContent(), "Nutze die Automatikschalter in deinem Bereich.");
+    assert.equal(await guestInfo.getAttribute("aria-label"), "Weitere Informationen");
+    await guestInfo.tap();
+    assert.equal(await guestInfo.getAttribute("aria-expanded"), "true");
+    assert.match(await guestPopover.textContent(), /globale Automatiksteuerung wirkt sich auf ALLE Rollläden/);
+    await assertPopoverInViewport(guestPopover);
+    await page.screenshot({ path: path.join(output, "restricted-info-mobile.png"), fullPage: true });
+    await card.locator(".ssm-title").tap();
+    assert.equal(await guestPopover.isHidden(), true);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(300);
+    await guestInfo.click();
+    assert.equal(await guestInfo.getAttribute("aria-expanded"), "true");
+    await assertPopoverInViewport(guestPopover);
+    await page.screenshot({ path: path.join(output, "restricted-info-desktop.png"), fullPage: true });
+    await card.locator(".ssm-title").click();
+    assert.equal(await guestPopover.isHidden(), true);
+
     assert.deepEqual(errors, []);
     assert.deepEqual(blocked, [], "Baseline should not attempt writes or unknown requests");
     const report = { url: state.url, project: state.project, source_hash: state.source_hash, desktop: true, mobile: true, errors, blocked };
@@ -104,4 +157,52 @@ async function main() {
     await browser.close();
   }
 }
+
+async function verifyInfoPopover(page, card, expectedText, screenshotPath) {
+  const trigger = card.locator("[data-info-toggle]").first();
+  const popover = card.locator('[role="tooltip"]').first();
+  assert.equal(await trigger.getAttribute("aria-label"), "Weitere Informationen");
+  assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+  assert.equal(await popover.isHidden(), true);
+  await trigger.click();
+  assert.equal(await trigger.getAttribute("aria-expanded"), "true");
+  assert.ok((await popover.textContent()).includes(expectedText));
+  await assertPopoverInViewport(popover);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await page.keyboard.press("Escape");
+  assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+  assert.equal(await popover.isHidden(), true);
+  assert.equal(await trigger.evaluate((el) => el.getRootNode().activeElement === el), true);
+  await trigger.click();
+  await card.locator("h2").click();
+  assert.equal(await popover.isHidden(), true, "Outside click closes the information popover");
+}
+
+async function assertInfoBesideHeading(trigger, expectedHeading) {
+  const layout = await trigger.evaluate((button) => {
+    const row = button.closest(".ssm-info-heading-row-h2");
+    const heading = row && row.querySelector("h2");
+    if (!heading) return null;
+    const headingRect = heading.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    return { text: heading.textContent.trim(), headingRight: headingRect.right, buttonLeft: buttonRect.left };
+  });
+  assert.ok(layout, "The info icon is grouped with the page heading");
+  assert.equal(layout.text, expectedHeading);
+  assert.ok(layout.buttonLeft >= layout.headingRight, "The info icon appears to the right of the heading on the same row");
+}
+
+async function assertPopoverInViewport(popover) {
+  const bounds = await popover.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const cardRect = el.getRootNode().querySelector("ha-card").getBoundingClientRect();
+    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+      width: window.innerWidth, height: window.innerHeight,
+      cardLeft: cardRect.left, cardRight: cardRect.right };
+  });
+  assert.ok(bounds.left >= 0 && bounds.right <= bounds.width, "Popover stays within the viewport horizontally");
+  assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.height, "Popover stays within the viewport vertically");
+  assert.ok(bounds.left >= bounds.cardLeft && bounds.right <= bounds.cardRight, "Popover stays within its card");
+}
+
 main().catch(error => { console.error("UI check failed: " + error.message); process.exitCode = 1; });
