@@ -46,8 +46,8 @@ async function main() {
             const settings = msg.type === "smart_shutter/save_custom_areas" ? msg.areas.find((area) => area.id === "south") : msg.fields || msg;
             if (settings.notification_mode === "custom" && settings.notify_service !== "notify.guest") throw new Error("Select a registered notify service.");
             if (msg.type === "smart_shutter/save_shutter_notifications") {
-              if (msg.notification_mode === "inherit") delete window.__config.shutter_notifications[msg.entity_id];
-              else window.__config.shutter_notifications[msg.entity_id] = { notification_mode: msg.notification_mode, notify_service: msg.notify_service };
+              if (msg.notification_mode === "inherit" && msg.pre_notify_mode === "inherit") delete window.__config.shutter_notifications[msg.entity_id];
+              else window.__config.shutter_notifications[msg.entity_id] = { notification_mode: msg.notification_mode, notify_service: msg.notify_service, pre_notify_mode: msg.pre_notify_mode, pre_notify_lead_minutes: msg.pre_notify_lead_minutes };
             }
             if (msg.type === "smart_shutter/save_custom_areas") window.__config.custom_areas = structuredClone(msg.areas);
             if (msg.type === "smart_shutter/save_shutter_areas") window.__config.shutter_areas = structuredClone(msg.shutter_areas);
@@ -69,6 +69,12 @@ async function main() {
     const form = card.locator("[data-notification-settings]");
     const mode = form.locator("[data-notification-mode]");
     const recipient = form.locator("[data-notification-recipient]");
+    const warningInfo = form.locator('[data-pre-notify-hint] .notification-info');
+    assert.equal(await warningInfo.locator('.notification-info-text').isVisible(), false, 'Warning explanation starts collapsed');
+    await warningInfo.locator('summary').click();
+    assert.match(await warningInfo.locator('.notification-info-text').textContent(), /Gilt nur für geplante Schließvorwarnungen/);
+    assert.equal(await warningInfo.locator('.notification-info-text').isVisible(), true);
+    await warningInfo.locator('summary').click();
    const status = form.locator("[data-notification-status]");
     assert.equal(await form.locator(".notification-title h3").count(), 1, "Shutter notifications keep their own title in Advanced");
    assert.equal(await form.locator("button[data-save-shutter-notifications]").count(), 0, "Notification settings autosave");
@@ -90,7 +96,7 @@ async function main() {
     await recipient.fill("notify.guest");
     await status.filter({ hasText: "Automatisch gespeichert" }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.__saved.at(-1)), {
-      type: "smart_shutter/save_shutter_notifications", entry_id: "entry1", entity_id: "cover.testroom", notification_mode: "custom", notify_service: "notify.guest",
+      type: "smart_shutter/save_shutter_notifications", entry_id: "entry1", entity_id: "cover.testroom", notification_mode: "custom", notify_service: "notify.guest", pre_notify_mode: "inherit",
     });
     await card.locator('[data-back]').click();
     await card.locator('[data-open-detail="dev_testroom"]').click();
@@ -123,6 +129,31 @@ async function main() {
     await status.filter({ hasText: "Automatisch gespeichert" }).waitFor();
     assert.equal(await page.evaluate(() => window.__config.shutter_notifications["cover.testroom"]), undefined);
     console.log("OK - A newer autosave is flushed after navigating away during an in-flight save");
+
+    const preMode = form.locator('[data-pre-notify-mode]');
+    const preMinutes = form.locator('[data-pre-notify-minutes]');
+    assert.equal(await preMode.inputValue(), 'inherit');
+    await preMode.selectOption('off');
+    await status.filter({ hasText: 'Automatisch gespeichert' }).waitFor();
+    assert.equal(await mode.inputValue(), 'inherit', 'Warning off keeps movement recipient inheritance');
+    assert.equal(await page.evaluate(() => window.__config.shutter_notifications['cover.testroom'].pre_notify_mode), 'off');
+    await preMode.selectOption('custom');
+    await preMinutes.fill('12');
+    await status.filter({ hasText: 'Automatisch gespeichert' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.shutter_notifications['cover.testroom'].pre_notify_lead_minutes), 12);
+    await preMinutes.fill('0');
+    await page.waitForTimeout(750);
+    assert.equal(await page.evaluate(() => window.__config.shutter_notifications['cover.testroom'].pre_notify_lead_minutes), 12, 'Invalid lead does not overwrite saved setting');
+    await preMinutes.fill('7');
+    await status.filter({ hasText: 'Automatisch gespeichert' }).waitFor();
+    await card.locator('[data-back]').click();
+    await card.locator('[data-open-detail="dev_testroom"]').click();
+    await card.locator('[data-tab="advanced"]').click();
+    assert.equal(await preMinutes.inputValue(), '7');
+    await preMode.selectOption('inherit');
+    await status.filter({ hasText: 'Automatisch gespeichert' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.shutter_notifications['cover.testroom']), undefined);
+    console.log('OK - Independent warning off/custom/inherit, validation and persistence');
 
     await card.locator('[data-tab="basic"]').click();
     await card.locator('[data-area-edit="south"]').click();
@@ -186,6 +217,14 @@ async function main() {
     await page.setViewportSize({ width: 320, height: 844 });
     assert.equal(await guestForm.evaluate((el) => el.scrollWidth <= el.clientWidth), true);
     const infoBounds = async (details) => {
+      const row = details.locator('..');
+      const alignment = await row.evaluate(el => {
+        const label = el.querySelector('label, h3');
+        const icon = el.querySelector('summary').getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        return { gap: icon.left - label.getBoundingClientRect().right, sameRow: Math.abs((label.getBoundingClientRect().top + label.getBoundingClientRect().bottom) / 2 - (icon.top + icon.bottom) / 2) < 2 };
+      });
+      assert.ok(alignment.gap >= 0 && alignment.gap <= 8 && alignment.sameRow, 'Info sits directly beside its text');
       await details.locator("summary").click();
       const bounds = await details.locator(".notification-info-text").evaluate((el) => {
         const tip = el.getBoundingClientRect();
@@ -196,13 +235,15 @@ async function main() {
       await details.locator("summary").click();
     };
     await infoBounds(guestForm.locator(".notification-title .notification-info"));
-    await infoBounds(guestForm.locator(".notification-hint .notification-info"));
+    await infoBounds(guestForm.locator("[data-notification-recipient-hint] .notification-info"));
+    await infoBounds(guestForm.locator("[data-pre-notify-hint] .notification-info"));
     await page.setViewportSize({ width: 1280, height: 844 });
     const haCard = card.locator("ha-card");
     await haCard.evaluate((el) => { el.style.width = "260px"; el.style.maxWidth = "260px"; });
     assert.equal(await guestForm.evaluate((el) => el.scrollWidth <= el.clientWidth), true, "Notification form fits a narrow card");
     await infoBounds(guestForm.locator(".notification-title .notification-info"));
-    await infoBounds(guestForm.locator(".notification-hint .notification-info"));
+    await infoBounds(guestForm.locator("[data-notification-recipient-hint] .notification-info"));
+    await infoBounds(guestForm.locator("[data-pre-notify-hint] .notification-info"));
     await haCard.evaluate((el) => { el.style.removeProperty("width"); el.style.removeProperty("max-width"); });
     assert.deepEqual(await page.evaluate(() => window.__services), []);
     assert.deepEqual(errors, []);

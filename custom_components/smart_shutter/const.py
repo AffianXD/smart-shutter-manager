@@ -56,11 +56,11 @@ MAX_STAGGER_DELAY_MS = 5000
 
 # Standard notification texts as Jinja templates (freely available via the
 # Options Flow customizable). Available variables:
-# notify_text_moved:    names, count, action, trigger
+# notify_text_moved:    names, count, action, trigger, summary, motion
 # notify_text_frost:    names, count
 # notify_text_preclose: name, time, action
 DEFAULT_NOTIFY_TEXT_MOVED = (
-    "{{ names }} {{ 'was' if count == 1 else 'were' }} {{ action }}. "
+    "{{ summary }} {{ motion }}. "
     "Trigger: {{ trigger }}."
 )
 DEFAULT_NOTIFY_TEXT_FROST = "Frost protection active: {{ names }} will not move."

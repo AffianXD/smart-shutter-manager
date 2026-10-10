@@ -142,6 +142,20 @@ notification templates are preserved; `action` and `trigger` are display text,
 while `action_raw` and `trigger_raw` provide the original values for template
 comparisons (`trigger_raw` is available for movement notifications).
 
+In a shutter's **Advanced → Notifications** settings, scheduled pre-close
+warnings independently inherit the global lead time, switch off, or use a
+custom time of 1–1440 minutes. Recipient settings still apply to every message;
+switching off only the warning leaves movement and other messages enabled.
+Existing configurations inherit the global warning time automatically.
+
+Movement notifications summarize unique commanded shutters per recipient and
+direction during the five-second batching window. “All shutters” and complete
+area names require coverage of every managed member, including members whose
+notifications are disabled. Skipped or later movements cannot complete an
+earlier summary. The additional template variables `summary` and `motion`
+describe this coverage and the commanded movement; service execution does not
+confirm an end position. Existing custom templates keep their original variables.
+
 ### Summer and winter profiles
 
 Enable **Switch automatically with daylight saving time** under the card's

@@ -20,10 +20,10 @@ def coordinator(hass, options=None):
 
 
 @pytest.mark.parametrize("language,expected", [
-    ("de", "Küche, Büro wurden geschlossen. Auslöser: Sonnenuntergang."),
-    ("de-DE", "Küche, Büro wurden geschlossen. Auslöser: Sonnenuntergang."),
-    ("en", "Küche, Büro were closed. Trigger: Sunset."),
-    ("fr", "Küche, Büro were closed. Trigger: Sunset."),
+    ("de", "Küche, Büro fahren herunter. Auslöser: Sonnenuntergang."),
+    ("de-DE", "Küche, Büro fahren herunter. Auslöser: Sonnenuntergang."),
+    ("en", "Küche, Büro are closing. Trigger: Sunset."),
+    ("fr", "Küche, Büro are closing. Trigger: Sunset."),
 ])
 async def test_movement_notifications_follow_ha_language(hass, language, expected):
     hass.config.language = language
@@ -86,7 +86,7 @@ async def test_preclose_warning_and_frost_notification_are_german(hass):
 async def test_invalid_template_falls_back_to_german(hass):
     hass.config.language = "de"
     batcher = NotificationBatcher(hass, coordinator(hass, {"notify_text_moved": "{{ broken"}))
-    assert batcher._format_moves([("Küche", "opened", "Sunrise")]) == "Küche wurde geöffnet. Auslöser: Sonnenaufgang."
+    assert batcher._format_moves([("Küche", "opened", "Sunrise")]) == "Küche fährt hoch. Auslöser: Sonnenaufgang."
 
 
 async def test_sun_rule_notifications_are_german(hass, monkeypatch):
@@ -111,7 +111,7 @@ async def test_saved_default_copies_follow_language_and_custom_raw_values_work(h
     hass.config.language = "de"
     coord = coordinator(hass, {"notify_text_moved": DEFAULT_NOTIFY_TEXT_MOVED})
     batcher = NotificationBatcher(hass, coord)
-    assert batcher._format_moves([("Küche", "closed", "Schedule")]) == "Küche wurde geschlossen. Auslöser: Zeitplan."
+    assert batcher._format_moves([("Küche", "closed", "Schedule")]) == "Küche fährt herunter. Auslöser: Zeitplan."
     assert coord.entry.options["notify_text_moved"] == DEFAULT_NOTIFY_TEXT_MOVED
     raw = "{{ action_raw }} / {{ trigger_raw }} / {{ action }} / {{ trigger }}"
     batcher = NotificationBatcher(hass, coordinator(hass, {"notify_text_moved": raw}))

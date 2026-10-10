@@ -62,6 +62,7 @@ from .coordinator import ManagedShutter, SmartShutterCoordinator
 from .helpers import render_notify_template
 from .localization import display_text, is_german
 from .manual_intervention import ManualInterventionGuard
+from .movement_summary import movement_phrase, movement_summary
 from .scheduler import (
     determine_active_profile,
     get_action_type,
@@ -107,13 +108,15 @@ class NotificationBatcher:
         # OWN, containing only his shutters message, instead in
         # subscribe to the host's global collection message or this
         # to mix with foreign shutters.
-        self._pending_moves: dict[str | None, list[tuple[str, str, str]]] = defaultdict(list)
+        self._pending_moves: dict[str | None, list[tuple]] = defaultdict(list)
         self._pending_frost: dict[str | None, list[str]] = defaultdict(list)
         self._flush_unsub = None
 
     @callback
-    def report_movement(self, name: str, action_label: str, trigger_label: str, notify_target: str | None) -> None:
-        self._pending_moves[notify_target].append((name, action_label, trigger_label))
+    def report_movement(self, name: str, action_label: str, trigger_label: str, notify_target: str | None, *, entity_id: str | None = None, direction: str | None = None) -> None:
+        if not notify_target:
+            return
+        self._pending_moves[notify_target].append((name, action_label, trigger_label, entity_id, direction or action_label))
         self._schedule_flush()
 
     @callback
@@ -144,16 +147,15 @@ class NotificationBatcher:
                 )
 
     async def _send_batch(
-        self, notify_target: str | None, moves: list[tuple[str, str, str]], frost: list[str]
+        self, notify_target: str | None, moves: list[tuple], frost: list[str]
     ) -> None:
         notify_service = notify_target
         if not notify_service or "." not in notify_service:
             return
 
-        messages = []
-        if moves:
-            messages.append(self._format_moves(moves))
+        frost_text = None
         if frost:
+            frost = list(dict.fromkeys(frost))
             names = ", ".join(frost)
             text = _render_template(
                 self.hass,
@@ -162,9 +164,24 @@ class NotificationBatcher:
                 fallback=(f"Frostschutz aktiv: {names} {'wird' if len(frost) == 1 else 'werden'} nicht bewegt."
                           if is_german(self.hass) else f"Frost protection active: {names} will not move."),
             )
-            messages.append(text)
+            frost_text = text
 
-        await self._call_notify(notify_service, "Smart Shutter Manager", "\n".join(messages))
+        # A recipient gets separate directions, even if both occur during the
+        # same batching window. Never imply a shared end position.
+        directions = defaultdict(list)
+        for move in moves:
+            direction = move[4] if len(move) > 4 else move[1]
+            directions[direction].append(move)
+        for action_label, direction_moves in directions.items():
+            subject, count = movement_summary(self.hass, self._coordinator, direction_moves)
+            title = f"{subject} {movement_phrase(self.hass, action_label, count)}"
+            message = self._format_moves(direction_moves)
+            if frost_text:
+                message += "\n" + frost_text
+                frost_text = None
+            await self._call_notify(notify_service, title, message)
+        if frost_text:
+            await self._call_notify(notify_service, "Smart Shutter Manager", frost_text)
 
     async def send_pre_close_warning(
         self,
@@ -175,6 +192,8 @@ class NotificationBatcher:
     ) -> None:
         """Immediate, individual warning with buttons (+X Min / Skip) - deliberately NOT bundled, as each response refers to
 exactly this one shutter."""
+        if self._coordinator.effective_pre_notify_lead(shutter.entity_id) <= timedelta(0):
+            return
         notify_service = self._coordinator.effective_notify_service(shutter.entity_id)
         if not notify_service or "." not in notify_service:
             return
@@ -235,14 +254,25 @@ exactly this one shutter."""
                 "Notification about '%s' could not be sent", notify_service
             )
 
-    def _format_moves(self, moves: list[tuple[str, str, str]]) -> str:
-        groups: dict[tuple[str, str], list[str]] = defaultdict(list)
-        for name, action_label, trigger_label in moves:
-            groups[(action_label, trigger_label)].append(name)
+    def _format_moves(self, moves: list[tuple]) -> str:
+        groups: dict[tuple[str, str, str], dict[object, tuple]] = defaultdict(dict)
+        seen = set()
+        for move in moves:
+            name, action_label, trigger_label = move[:3]
+            entity_id = move[3] if len(move) > 3 else None
+            direction = move[4] if len(move) > 4 else action_label
+            identity = entity_id or ("name", name)
+            if (direction, identity) in seen:
+                continue
+            seen.add((direction, identity))
+            groups[(action_label, trigger_label, direction)][identity] = move
 
         lines = []
-        for (action_label, trigger_label), names in groups.items():
+        for (action_label, trigger_label, direction), unique_moves in groups.items():
+            names = [move[0] for move in unique_moves.values()]
             joined = ", ".join(names)
+            summary, count = movement_summary(self.hass, self._coordinator, unique_moves.values())
+            motion = movement_phrase(self.hass, direction, count)
             text = _render_template(
                 self.hass,
                 self._coordinator.notify_text_moved,
@@ -253,10 +283,11 @@ exactly this one shutter."""
                     "trigger": display_text(self.hass, trigger_label),
                     "action_raw": action_label,
                     "trigger_raw": trigger_label,
+                    "summary": summary,
+                    "motion": motion,
                 },
                 fallback=(
-                    f"{joined} {display_text(self.hass, 'was' if len(names) == 1 else 'were')} "
-                    f"{display_text(self.hass, action_label)}. "
+                    f"{summary} {motion}. "
                     f"{display_text(self.hass, 'Trigger')}: {display_text(self.hass, trigger_label)}."
                 ),
             )
@@ -360,7 +391,7 @@ class ShutterActionExecutor:
 
         self._target_dt[action] = next_dt
 
-        pre_lead = self._coordinator.pre_notify_lead
+        pre_lead = self._coordinator.effective_pre_notify_lead(self._shutter.entity_id)
         if action == ACTION_CLOSE and pre_lead > timedelta(0) and (dt_util.as_utc(next_dt) - dt_util.as_utc(now)) > pre_lead:
             pre_time = dt_util.as_utc(next_dt) - pre_lead
             self._unsub_prenotify[action] = async_track_point_in_time(
@@ -579,7 +610,10 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
         return True
 
     async def _execute(self, action: str) -> None:
-        """Checks manual pause + frost protection + automation, skips already reached target positions, then calls open/close_cover and reports actual movement to the NotificationBatcher."""
+        """Check current guards, issue a cover command and report its execution."""
+        if self._record_date_pause(action):
+            return
+        await self._apply_stagger_delay()
         if self._record_date_pause(action):
             return
         if self._manual_intervention_guard.is_paused(self._shutter.entity_id):
@@ -682,26 +716,38 @@ Bugfix: HA's coarse cover status "open" only means "position > 0%", not "fully o
             service,
             self._shutter.entity_id,
         )
-        await self._apply_stagger_delay()
-        if self._record_date_pause(action):
-            return
         self._manual_intervention_guard.mark_self_initiated(self._shutter.entity_id)
+        # Position commands can move opposite to the configured schedule action.
+        # Keep historical action/raw template values and classify the actual
+        # command direction separately. Unknown positions prove no direction.
+        action_label = "opened" if action == ACTION_OPEN else "closed"
+        direction = action_label
+        if service == "set_cover_position":
+            cover_state = self.hass.states.get(self._shutter.entity_id)
+            current_position = cover_state.attributes.get("current_position") if cover_state else None
+            if isinstance(current_position, (int, float)) and not isinstance(current_position, bool) and 0 <= current_position <= 100:
+                direction = "opened" if target_position > current_position else "closed"
+                if target_position == current_position:
+                    direction = "positioned"
+            else:
+                direction = "positioned"
         await self.hass.services.async_call(
             "cover",
             service,
             service_data,
-            blocking=False,
+            blocking=True,
         )
         self._last_executed_store.set(self._shutter.entity_id, action, dt_util.now().date())
         self._coordinator.clear_action_override(self._shutter.entity_id, action)
 
-        action_label = "opened" if action == ACTION_OPEN else "closed"
         trigger_label = self._trigger_label(action)
         self._notifier.report_movement(
             self._shutter.name,
             action_label,
             trigger_label,
             self._coordinator.effective_notify_service(self._shutter.entity_id),
+            entity_id=self._shutter.entity_id,
+            direction=direction,
         )
         self._log_event(action, "executed", f"{action_label} ({trigger_label}, target {target_position}%)")
 

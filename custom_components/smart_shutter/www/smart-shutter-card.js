@@ -1837,10 +1837,14 @@
           font-size: 0.82em; font-weight: 400; line-height: 1.4;
         }
         .notification-title { position: relative; display: flex; align-items: center; gap: 2px; }
-        .notification-title h3 { margin-right: 0; }
-        .notification-title .notification-info { margin-left: auto; flex-shrink: 0; }
-        .notification-title .notification-info-text { left: auto; right: 0; }
-        .notification-hint { position: relative; display: block; width: 100%; }
+        .notification-title:has(h3) { margin: 22px 0 10px; }
+        .notification-title h3 { margin: 0; }
+        .notification-title .notification-info { margin-left: 4px; flex-shrink: 0; }
+        .notification-title .notification-info-text { left: 0; right: auto; }
+        .notification-hint { position: relative; display: flex; align-items: center; gap: 6px; width: 100%; margin-bottom: 5px; }
+        .form-field .notification-hint label { flex: 0 1 auto; min-width: 0; margin: 0; }
+        .notification-hint .notification-info { margin-left: 0; flex-shrink: 0; }
+        .notification-hint .notification-info-text { left: 0; right: auto; }
         .notification-status { display: block; min-height: 1.2em; margin: 4px 0 10px; font-size: 0.8em; color: var(--ssm-muted); }
         .ssm-info-control { display: inline-flex; vertical-align: middle; }
         .ssm-info-heading-row, .ssm-info-section-row, .ssm-info-label-row, .ssm-info-inline-label {
@@ -2789,6 +2793,14 @@
         return;
       }
       const notificationMode = ev.target.closest("[data-notification-mode]");
+      const preNotify = ev.target.closest("[data-pre-notify-mode], [data-pre-notify-minutes]");
+      if (preNotify) {
+        const form = preNotify.closest("[data-notification-settings]");
+        form.querySelector("[data-pre-notify-minutes-field]").style.display = form.querySelector("[data-pre-notify-mode]").value === "custom" ? "" : "none";
+        if (this._notificationDraftIsSavable(this._notificationDraft(form))) this._queueNotificationSave(form, 0);
+        else this._cancelNotificationSave(form);
+        return;
+      }
       if (notificationMode) {
         const form = notificationMode.closest("[data-notification-settings]");
         form.querySelector("[data-notification-recipient-field]").style.display = notificationMode.value === "custom" ? "" : "none";
@@ -2936,6 +2948,13 @@
     }
 
     _onInput(ev) {
+      const preNotifyMinutes = ev.target.closest("[data-pre-notify-minutes]");
+      if (preNotifyMinutes) {
+        const form = preNotifyMinutes.closest("[data-notification-settings]");
+        if (this._notificationDraftIsSavable(this._notificationDraft(form))) this._queueNotificationSave(form, 650);
+        else this._cancelNotificationSave(form);
+        return;
+      }
       const exceptionForm = ev.target.closest("[data-exception-form]");
       if (exceptionForm && ev.target.matches("[data-exception-field], [data-exception-action], [data-exception-target]")) {
         const status = exceptionForm.querySelector("[data-exception-status-message]");
@@ -5221,7 +5240,7 @@
       if (templatesSection.isOpen) {
       html += textarea(
         "notify_text_moved", "Vorlage: Bewegungsbenachrichtigung",
-        bs.notify_text_moved, "Variablen: names, count, action, trigger"
+        bs.notify_text_moved, "Variablen: names, count, action, trigger, action_raw, trigger_raw, summary, motion"
       );
       html += textarea(
         "notify_text_frost", "Vorlage: Frostschutzbenachrichtigung",
@@ -5293,10 +5312,12 @@
       const saveKey = coverEntityId ? `shutter:${coverEntityId}` : areaId ? `area:${areaId}` : null;
       const state = saveKey && this._notificationSaveStates && this._notificationSaveStates.get(saveKey);
       const displaySettings = state && state.draft && state.revision > state.savedRevision
-        ? { ...settings, notification_mode: state.draft.mode, notify_service: state.draft.notifyService }
+        ? { ...settings, notification_mode: state.draft.mode, notify_service: state.draft.notifyService, pre_notify_mode: state.draft.preNotifyMode, pre_notify_lead_minutes: state.draft.preNotifyMinutes }
         : settings;
       const mode = this._notificationMode(displaySettings);
+      const preMode = displaySettings.pre_notify_mode || "inherit";
       const hintLabel = de ? "Hinweis anzeigen" : "Show information";
+      const fieldId = this._escapeHtml(coverEntityId || areaId || "new-area");
       const precedenceHint = area
         ? (de ? "Vererben übernimmt die globale Einstellung. Einstellungen einzelner Rollläden haben Vorrang." : "Inherit uses the global setting. Individual shutter settings take priority.")
         : (de ? "Vererben übernimmt die Bereichseinstellung, sonst die globale Einstellung. Bei mehreren Bereichen gilt für Zeitplanmeldungen der erste ausdrücklich konfigurierte Bereich; Sonnenstandsmeldungen nutzen den auslösenden Bereich." : "Inherit uses the area setting, otherwise the global setting. For schedule notifications, the first explicitly configured area wins; sun notifications use the triggering area.");
@@ -5307,20 +5328,38 @@
      return `<div class="notification-settings" data-notification-settings data-notification-autosave="${autosave ? "true" : "false"}" ${coverEntityId ? `data-notification-entity="${this._escapeHtml(coverEntityId)}"` : ""} ${areaId ? `data-notification-area-id="${this._escapeHtml(areaId)}"` : ""}>
         <div class="notification-title">${notificationTitle}<details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${appliesHint}</span></details></div>
         <div class="form-field">
-          <label>${de ? "Benachrichtigungen empfangen" : "Receive notifications"}
-            <select data-notification-mode ${area ? 'data-area-field="notification_mode"' : ""}>
+          <div class="notification-hint" data-notification-recipient-hint>
+            <label for="notification-mode-${fieldId}">${de ? "Benachrichtigungen empfangen" : "Receive notifications"}</label>
+            <details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${precedenceHint}</span></details>
+          </div>
+            <select id="notification-mode-${fieldId}" data-notification-mode ${area ? 'data-area-field="notification_mode"' : ""}>
               <option value="inherit" ${mode === "inherit" ? "selected" : ""}>${de ? "Vererben" : "Inherit"}</option>
               <option value="off" ${mode === "off" ? "selected" : ""}>${de ? "Aus" : "Off"}</option>
               <option value="custom" ${mode === "custom" ? "selected" : ""}>${de ? "Eigener Empfänger" : "Custom recipient"}</option>
             </select>
-          </label>
         </div>
-        <div class="notification-hint"><details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${precedenceHint}</span></details></div>
         <div class="form-field" data-notification-recipient-field style="${mode === "custom" ? "" : "display:none"}">
           <label>${de ? "Benachrichtigungsdienst" : "Notification service"}
             <input type="text" data-notification-recipient ${area ? 'data-area-field="notify_service"' : ""} value="${this._escapeHtml(displaySettings.notify_service || "").replace(/"/g, "&quot;")}" placeholder="notify.mobile_app_phone" ${mode === "custom" ? "required" : ""} />
           </label>
         </div>
+        ${area ? "" : `<div class="form-field">
+          <div class="notification-hint" data-pre-notify-hint>
+            <label for="pre-notify-mode-${fieldId}">${de ? "Schließvorwarnung" : "Pre-close warning"}</label>
+            <details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${de ? "Gilt nur für geplante Schließvorwarnungen. Empfänger und andere Meldungen bleiben wie oben eingestellt." : "Only affects scheduled pre-close warnings. Recipients and other notifications follow the settings above."}</span></details>
+          </div>
+            <select id="pre-notify-mode-${fieldId}" data-pre-notify-mode>
+              <option value="inherit" ${preMode === "inherit" ? "selected" : ""}>${de ? "Globale Einstellung übernehmen" : "Use global setting"}</option>
+              <option value="off" ${preMode === "off" ? "selected" : ""}>${de ? "Vorwarnung ausschalten" : "Disable warning"}</option>
+              <option value="custom" ${preMode === "custom" ? "selected" : ""}>${de ? "Eigene Vorwarnzeit" : "Custom warning time"}</option>
+            </select>
+        </div>
+        <div class="form-field" data-pre-notify-minutes-field style="${preMode === "custom" ? "" : "display:none"}">
+          <label>${de ? "Vorwarnzeit in Minuten" : "Warning time in minutes"}
+            <input type="number" data-pre-notify-minutes min="1" max="1440" step="1" value="${this._escapeHtml(String(displaySettings.pre_notify_lead_minutes ?? 5))}" />
+          </label>
+        </div>
+        `}
         <span class="notification-status" data-notification-status role="status" aria-live="polite">${this._escapeHtml(state && state.statusText || "")}</span>
       </div>`;
     }
@@ -5359,11 +5398,14 @@
       return {
         mode: form.querySelector("[data-notification-mode]").value,
         notifyService: form.querySelector("[data-notification-recipient]").value.trim(),
+        preNotifyMode: form.querySelector("[data-pre-notify-mode]")?.value,
+        preNotifyMinutes: Number(form.querySelector("[data-pre-notify-minutes]")?.value),
       };
     }
 
     _notificationDraftIsSavable(draft) {
-      return !!draft && (draft.mode !== "custom" || !!draft.notifyService);
+      return !!draft && (draft.mode !== "custom" || !!draft.notifyService) &&
+        (draft.preNotifyMode !== "custom" || (Number.isInteger(draft.preNotifyMinutes) && draft.preNotifyMinutes >= 1 && draft.preNotifyMinutes <= 1440));
     }
 
     _scheduleNotificationSave(state, delay) {
@@ -5416,7 +5458,7 @@
       }
       if (!this._notificationDraftIsSavable(state.draft)) return;
       const revision = state.revision;
-      const { mode, notifyService } = state.draft;
+      const { mode, notifyService, preNotifyMode, preNotifyMinutes } = state.draft;
       state.saving = true;
       state.queued = false;
       this._setNotificationSaveStatus(state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
@@ -5428,6 +5470,8 @@
             entity_id: state.entityId,
             notification_mode: mode,
             notify_service: mode === "custom" ? notifyService : "",
+            pre_notify_mode: preNotifyMode || "inherit",
+            ...(preNotifyMode === "custom" ? { pre_notify_lead_minutes: preNotifyMinutes } : {}),
           });
         } else if (state.areaId) {
           await this._hass.callWS({

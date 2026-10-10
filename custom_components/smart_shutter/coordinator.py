@@ -385,6 +385,23 @@ class SmartShutterCoordinator:
         except (TypeError, ValueError):
             return timedelta(minutes=DEFAULT_PRE_NOTIFY_LEAD_MINUTES)
 
+    def effective_pre_notify_lead(self, cover_entity_id: str) -> timedelta:
+        """Resolve closing warnings independently from notification recipients.
+
+        Legacy configurations inherit the existing global lead time. Invalid
+        persisted overrides also fall back to that value instead of disabling
+        other notifications.
+        """
+        settings = self.shutter_notifications.get(cover_entity_id, {})
+        mode = settings.get("pre_notify_mode", "inherit")
+        if mode == "off":
+            return timedelta(0)
+        if mode == "custom":
+            minutes = settings.get("pre_notify_lead_minutes")
+            if type(minutes) is int and 1 <= minutes <= 1440:
+                return timedelta(minutes=minutes)
+        return self.pre_notify_lead
+
     @property
     def postpone_options_minutes(self) -> list[int]:
         """Selectable shift options in minutes (Options Flow, e.g. '5,10,15'), Default see const.DEFAULT_POSTPONE_OPTIONS_MINUTES."""

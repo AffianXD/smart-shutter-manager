@@ -69,7 +69,7 @@ from .const import (
 )
 from .scheduler import compute_forecast, find_overlapping_rules
 from .shutter_management import available_covers, async_update_covers
-from .notification_settings import notification_mode, validate_notification_settings
+from .notification_settings import notification_mode, validate_notification_settings, validate_pre_notify_settings
 from .temporal_exceptions import (
     conflicting_exceptions,
     conflicting_exception_pairs,
@@ -1110,6 +1110,8 @@ Not admin-only: anyone who has access to the area of the shutter (or is an admin
     vol.Required("entity_id"): str,
     vol.Required("notification_mode"): vol.In(("inherit", "off", "custom")),
     vol.Optional("notify_service", default=""): str,
+    vol.Optional("pre_notify_mode"): vol.In(("inherit", "off", "custom")),
+    vol.Optional("pre_notify_lead_minutes"): int,
 })
 @websocket_api.async_response
 async def handle_save_shutter_notifications(hass, connection, msg):
@@ -1128,14 +1130,21 @@ async def handle_save_shutter_notifications(hass, connection, msg):
         return
     try:
         settings = validate_notification_settings(hass, msg)
+        previous = coordinator.shutter_notifications.get(entity_id, {})
+        if "pre_notify_mode" in msg or "pre_notify_lead_minutes" in msg:
+            warning_fields = {**previous, **msg}
+            warning = validate_pre_notify_settings(warning_fields)
+        else:
+            # Older clients edit only recipients; retain independent warnings.
+            warning = {key: previous[key] for key in ("pre_notify_mode", "pre_notify_lead_minutes") if key in previous}
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_notifications", str(err))
         return
     overrides = dict(coordinator.shutter_notifications)
-    if settings["notification_mode"] == "inherit":
+    if settings["notification_mode"] == "inherit" and not warning:
         overrides.pop(entity_id, None)
     else:
-        overrides[entity_id] = settings
+        overrides[entity_id] = {**settings, **warning}
     hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_SHUTTER_NOTIFICATIONS: overrides})
     _notify_reload(hass, entry)
     connection.send_result(msg["id"], {"success": True})

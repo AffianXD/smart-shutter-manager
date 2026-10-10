@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.29.0
+
+- Configure scheduled pre-close warnings per shutter independently: inherit the global lead time, disable warnings, or choose a custom lead time. Existing recipient and notification settings remain effective.
+- Summarize commanded opening and closing movements by shutter, complete areas, or all managed shutters only when the reported movements cover them; keep recipients and directions separate and describe movements without claiming confirmed end positions.
+
 ## v0.28.2
 
 - Ignore expired date-based exceptions when validating shutter area changes, so historical rules do not block new assignments.

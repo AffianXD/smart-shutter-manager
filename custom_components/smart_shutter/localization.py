@@ -11,7 +11,7 @@ _GERMAN_TEXT = {
     "Skip today": "Heute überspringen", "Shutter closing soon": "Rollladen schließt bald",
 }
 _GERMAN_TEMPLATES = {
-    "notify_text_moved": "{{ names }} {{ 'wurde' if count == 1 else 'wurden' }} {{ action }}. Auslöser: {{ trigger }}.",
+    "notify_text_moved": "{{ summary }} {{ motion }}. Auslöser: {{ trigger }}.",
     "notify_text_frost": "Frostschutz aktiv: {{ names }} {{ 'wird' if count == 1 else 'werden' }} nicht bewegt.",
     "notify_text_preclose": "{{ name }} schließt um {{ time }} Uhr.",
     "sun_notify_text": "Sonnenstandsregel '{{ area }}': {{ count }} {{ 'Rollladen' if count == 1 else 'Rollläden' }} auf {{ position }}% gefahren.",
@@ -35,6 +35,12 @@ def notification_template(hass: HomeAssistant, key: str, configured: str | None,
     User-authored templates are returned verbatim and never rewritten in storage.
     """
     german_default = _GERMAN_TEMPLATES[key]
-    if configured and configured not in (english_default, german_default):
+    defaults = {english_default, german_default}
+    if key == "notify_text_moved":
+        defaults.update({
+            "{{ names }} {{ 'was' if count == 1 else 'were' }} {{ action }}. Trigger: {{ trigger }}.",
+            "{{ names }} {{ 'wurde' if count == 1 else 'wurden' }} {{ action }}. Auslöser: {{ trigger }}.",
+        })
+    if configured and configured not in defaults:
         return configured
     return german_default if is_german(hass) else english_default
