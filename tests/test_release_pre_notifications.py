@@ -122,3 +122,95 @@ def test_scheduler_uses_independent_warning_time(hass, monkeypatch, mode, minute
     worker._arm("open")
     assert [call.args[2] for call in tracker.call_args_list] == [target]
     worker.cancel_all()
+
+
+@pytest.mark.parametrize("shutter,areas,expected", [
+    ({}, [{"pre_notify_mode": "custom", "pre_notify_lead_minutes": 8}], 8),
+    ({}, [{"pre_notify_mode": "off"}], 0),
+    ({"pre_notify_mode": "custom", "pre_notify_lead_minutes": 2}, [{"pre_notify_mode": "off"}], 2),
+    ({"pre_notify_mode": "off"}, [{"pre_notify_mode": "custom", "pre_notify_lead_minutes": 8}], 0),
+    ({"pre_notify_mode": "inherit"}, [{}, {"pre_notify_mode": "custom", "pre_notify_lead_minutes": 8}], 8),
+    ({}, [{"pre_notify_mode": "off"}, {"pre_notify_mode": "custom", "pre_notify_lead_minutes": 8}], 0),
+    ({}, [{"pre_notify_mode": "custom", "pre_notify_lead_minutes": 8}, {"pre_notify_mode": "off"}], 8),
+    ({}, [{"pre_notify_mode": "custom", "pre_notify_lead_minutes": True}, {}], 5),
+])
+def test_area_warning_precedence(hass, shutter, areas, expected):
+    entry, _ = setup(hass, shutter)
+    area_ids = [str(index) for index in range(len(areas))]
+    hass.config_entries.async_update_entry(entry, options={**entry.options,
+        "custom_areas": [{"id": area_id, **area} for area_id, area in zip(area_ids, areas)],
+        "shutter_areas": {"cover.one": area_ids},
+    })
+    coordinator = SmartShutterCoordinator(hass, entry)
+    assert coordinator.effective_pre_notify_lead("cover.one") == timedelta(minutes=expected)
+    assert coordinator.effective_pre_notify_lead("cover.unassigned") == timedelta(minutes=5)
+    assert coordinator.effective_notify_service("cover.one") == "notify.owner"
+
+
+@pytest.mark.parametrize("admin", [False, True])
+@pytest.mark.parametrize("fields,expected", [
+    ({"pre_notify_mode": "custom", "pre_notify_lead_minutes": 5}, 5),
+    ({"pre_notify_mode": "off"}, 0),
+    ({"pre_notify_mode": "inherit"}, 7),
+    ({"pre_notify_mode": "custom", "pre_notify_lead_minutes": 1.5}, None),
+    ({"pre_notify_mode": "custom", "pre_notify_lead_minutes": True}, None),
+    ({"pre_notify_mode": "custom", "pre_notify_lead_minutes": 0}, None),
+    ({"pre_notify_mode": "custom", "pre_notify_lead_minutes": 1441}, None),
+    ({"pre_notify_mode": "custom"}, None),
+    ({"pre_notify_mode": "invalid"}, None),
+])
+async def test_area_warning_persistence_validation_and_guest_scope(hass, admin, fields, expected):
+    entry, _ = setup(hass, lead=7)
+    areas = [{"id": "guest", "name": "Guest", "assigned_ha_user_ids": ["guest"]}, {"id": "other", "name": "Other"}]
+    hass.config_entries.async_update_entry(entry, options={**entry.options,
+        "custom_areas": areas, "shutter_areas": {"cover.one": ["guest"]}})
+    coordinator = SmartShutterCoordinator(hass, entry)
+    hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] = coordinator
+    conn = SimpleNamespace(user=SimpleNamespace(is_admin=admin, id="guest"),
+        send_result=Mock(), send_error=Mock(), async_handle_exception=Mock())
+    if admin:
+        ws.handle_save_custom_areas(hass, conn, {"id": 1, "areas": [{**areas[0], **fields}, areas[1]]})
+    else:
+        ws.handle_save_own_area_settings(hass, conn, {"id": 1, "area_id": "guest", "fields": fields})
+    await hass.async_block_till_done()
+    conn.async_handle_exception.assert_not_called()
+    if expected is None:
+        assert conn.send_error.call_args.args[1] == "invalid_notifications"
+        assert entry.options["custom_areas"] == areas
+    else:
+        conn.send_error.assert_not_called()
+        assert SmartShutterCoordinator(hass, entry).effective_pre_notify_lead("cover.one") == timedelta(minutes=expected)
+        assert entry.options["custom_areas"][1] == areas[1]
+        # Old clients editing unrelated fields retain the warning override.
+        current = SmartShutterCoordinator(hass, entry)
+        hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] = current
+        ws.handle_save_own_area_settings(hass, conn, {"id": 2, "area_id": "guest", "fields": {"open_position": 80}})
+        await hass.async_block_till_done()
+        assert SmartShutterCoordinator(hass, entry).effective_pre_notify_lead("cover.one") == timedelta(minutes=expected)
+    conn.send_error.reset_mock()
+    if not admin:
+        ws.handle_save_own_area_settings(hass, conn, {"id": 3, "area_id": "other", "fields": fields})
+        await hass.async_block_till_done()
+        assert conn.send_error.call_args.args[1] == "unauthorized"
+
+
+def test_scheduler_arms_area_warning_before_close_only(hass, monkeypatch):
+    entry, _ = setup(hass)
+    hass.config_entries.async_update_entry(entry, options={**entry.options,
+        "custom_areas": [{"id": "front", "pre_notify_mode": "custom", "pre_notify_lead_minutes": 9}],
+        "shutter_areas": {"cover.one": ["front"]}})
+    coordinator = SmartShutterCoordinator(hass, entry)
+    now = datetime(2026, 10, 10, 12, tzinfo=timezone.utc)
+    target = now + timedelta(hours=1)
+    monkeypatch.setattr(executor.dt_util, "now", lambda: now)
+    monkeypatch.setattr(executor, "determine_active_profile", lambda *args: {})
+    monkeypatch.setattr(executor, "resolve_next_datetime", lambda *args: target)
+    tracker = Mock(return_value=Mock())
+    monkeypatch.setattr(executor, "async_track_point_in_time", tracker)
+    worker = executor.ShutterActionExecutor(hass, coordinator, ManagedShutter("cover.one", "One"), Mock(), Mock(), Mock(), Mock())
+    worker._arm("close")
+    assert [call.args[2] for call in tracker.call_args_list] == [target - timedelta(minutes=9), target]
+    tracker.reset_mock()
+    worker._arm("open")
+    assert [call.args[2] for call in tracker.call_args_list] == [target]
+    worker.cancel_all()

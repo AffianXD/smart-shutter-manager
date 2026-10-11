@@ -388,18 +388,20 @@ class SmartShutterCoordinator:
     def effective_pre_notify_lead(self, cover_entity_id: str) -> timedelta:
         """Resolve closing warnings independently from notification recipients.
 
-        Legacy configurations inherit the existing global lead time. Invalid
-        persisted overrides also fall back to that value instead of disabling
-        other notifications.
+        Individual overrides take priority, followed by the first configured
+        assigned area and the global lead time. Invalid persisted overrides
+        are ignored without changing notification recipients.
         """
-        settings = self.shutter_notifications.get(cover_entity_id, {})
-        mode = settings.get("pre_notify_mode", "inherit")
-        if mode == "off":
-            return timedelta(0)
-        if mode == "custom":
-            minutes = settings.get("pre_notify_lead_minutes")
-            if type(minutes) is int and 1 <= minutes <= 1440:
-                return timedelta(minutes=minutes)
+        candidates = [self.shutter_notifications.get(cover_entity_id, {})]
+        candidates.extend(self.get_shutter_areas(cover_entity_id))
+        for settings in candidates:
+            mode = settings.get("pre_notify_mode", "inherit")
+            if mode == "off":
+                return timedelta(0)
+            if mode == "custom":
+                minutes = settings.get("pre_notify_lead_minutes")
+                if type(minutes) is int and 1 <= minutes <= 1440:
+                    return timedelta(minutes=minutes)
         return self.pre_notify_lead
 
     @property

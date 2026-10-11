@@ -226,7 +226,7 @@ async function main() {
     await card.locator('[data-settings-back]').click();
     await card.locator('[data-settings-nav="settings-areas"]').click();
     await card.locator('[data-area-edit="guest"]').click();
-    const areaExceptions = card.locator('[data-toggle-area-section="detail-exceptions-guest"]');
+    const areaExceptions = card.locator('.section-toggle[data-toggle-area-section="detail-exceptions-guest"]');
     assert.equal(await card.locator('[data-temporal-exception-section][data-temporal-area="guest"]').getAttribute("class"), null, "Area exceptions share the flat accordion style");
     assert.equal(await card.locator('[data-exception-edit="__new__"]').count(), 0, "Area exception actions also start inside the collapsed section");
     await areaExceptions.click();

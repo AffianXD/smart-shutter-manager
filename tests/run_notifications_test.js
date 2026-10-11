@@ -69,26 +69,27 @@ async function main() {
     const form = card.locator("[data-notification-settings]");
     const mode = form.locator("[data-notification-mode]");
     const recipient = form.locator("[data-notification-recipient]");
-    const warningInfo = form.locator('[data-pre-notify-hint] .notification-info');
-    assert.equal(await warningInfo.locator('.notification-info-text').isVisible(), false, 'Warning explanation starts collapsed');
-    await warningInfo.locator('summary').click();
-    assert.match(await warningInfo.locator('.notification-info-text').textContent(), /Gilt nur für geplante Schließvorwarnungen/);
-    assert.equal(await warningInfo.locator('.notification-info-text').isVisible(), true);
-    await warningInfo.locator('summary').click();
+    const warningInfo = form.locator('[data-pre-notify-hint] .ssm-info-control');
+    assert.equal(await warningInfo.locator('.ssm-info-popover').isVisible(), false, 'Warning explanation starts collapsed');
+    await warningInfo.locator('[data-info-toggle]').click();
+    assert.match(await warningInfo.locator('.ssm-info-popover').textContent(), /Gilt nur für geplante Schließvorwarnungen/);
+    assert.equal(await warningInfo.locator('.ssm-info-popover').isVisible(), true);
+    await warningInfo.locator('[data-info-toggle]').click();
    const status = form.locator("[data-notification-status]");
-    assert.equal(await form.locator(".notification-title h3").count(), 1, "Shutter notifications keep their own title in Advanced");
+    assert.equal(await form.locator(".ssm-info-heading-row h3").count(), 1, "Shutter notifications keep their own title in Advanced");
    assert.equal(await form.locator("button[data-save-shutter-notifications]").count(), 0, "Notification settings autosave");
-    assert.equal(await form.locator("details.notification-info[open]").count(), 0, "Hints are collapsed initially");
-    const info = form.locator("details.notification-info").first();
-    await info.locator("summary").click();
-    assert.equal(await info.locator(".notification-info-text").isVisible(), true, "The info icon reveals its hint");
-    await info.locator("summary").click();
-    assert.equal(await info.locator(".notification-info-text").isVisible(), false);
+    assert.equal(await form.locator("[data-info-toggle][aria-expanded=true]").count(), 0, "Hints are collapsed initially");
+    const info = form.locator(".ssm-info-control").first();
+    await info.locator("[data-info-toggle]").click();
+    assert.equal(await info.locator(".ssm-info-popover").isVisible(), true, "The info icon reveals its hint");
+    await info.locator("[data-info-toggle]").click();
+    assert.equal(await info.locator(".ssm-info-popover").isVisible(), false);
     assert.equal(await mode.inputValue(), "inherit");
     assert.deepEqual(await mode.locator("option").allTextContents(), ["Vererben", "Aus", "Eigener Empfänger"]);
     assert.equal(await recipient.isVisible(), false);
     await mode.selectOption("custom");
     assert.equal(await recipient.isVisible(), true);
+    await assertRecipientSpacing(form);
     assert.equal(await page.evaluate(() => window.__saved.length), 0, "Empty recipient must not save");
     await recipient.fill("notify.missing");
     await status.filter({ hasText: "registered notify" }).waitFor();
@@ -161,9 +162,9 @@ async function main() {
     const areaMode = areaForm.locator("[data-notification-mode]");
     const areaRecipient = areaForm.locator("[data-notification-recipient]");
    const areaStatus = areaForm.locator("[data-notification-status]");
-   assert.equal(await areaForm.locator(".notification-title h3").count(), 0, "Area accordion does not repeat its notification heading inside");
+   assert.equal(await areaForm.locator(".ssm-info-heading-row h3").count(), 0, "Area accordion does not repeat its notification heading inside");
    assert.equal(await areaMode.inputValue(), "custom", "Legacy area recipient is preserved");
-   assert.equal(await areaForm.locator("details.notification-info[open]").count(), 0, "Area hints are also collapsed");
+   assert.equal(await areaForm.locator("[data-info-toggle][aria-expanded=true]").count(), 0, "Area hints are also collapsed");
     await card.locator('.section-toggle[data-toggle-area-section="notify"]').click();
     assert.equal(await card.locator("[data-notification-settings]").count(), 0, "Collapsing the area notification section hides the whole form");
     await card.locator('.section-toggle[data-toggle-area-section="notify"]').click();
@@ -177,13 +178,38 @@ async function main() {
     assert.equal(await page.evaluate(() => window.__saved.filter((msg) => msg.type === "smart_shutter/save_shutter_areas").length), membershipWrites, "Invalid settings must not change membership");
     await areaRecipient.fill("notify.guest");
     await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.__saved.at(-1).fields).sort()), ["notification_mode", "notify_service"], "Autosave updates only the area's notification settings");
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.__saved.at(-1).fields).sort()), ["notification_mode", "notify_service", "pre_notify_mode"], "Autosave updates only the area's notification settings");
+    const areaPreMode = areaForm.locator('[data-pre-notify-mode]');
+    await assertRecipientSpacing(areaForm);
+    const areaPreMinutes = areaForm.locator('[data-pre-notify-minutes]');
+    await areaPreMode.selectOption('custom');
+    await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
+    assert.equal(await areaPreMinutes.inputValue(), '5', 'Area warnings default to five minutes');
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].pre_notify_lead_minutes), 5);
+    await areaPreMinutes.fill('0');
+    await page.waitForTimeout(750);
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].pre_notify_lead_minutes), 5, 'Invalid area lead cannot replace the saved value');
+    await areaPreMinutes.fill('9');
+    await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].pre_notify_lead_minutes), 9);
     await card.locator('[data-area-save]').click();
     await card.locator('[data-area-edit="south"]').waitFor();
     assert.equal(await page.evaluate(() => window.__config.custom_areas[0].name), "South draft", "The separate area form save still saves its draft");
     assert.equal(await page.evaluate(() => window.__config.custom_areas[0].notification_mode), "custom");
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].pre_notify_lead_minutes), 9, 'The full area save retains the warning time');
+    await card.locator('[data-area-edit="south"]').click();
+    assert.equal(await areaPreMode.inputValue(), 'custom');
+    assert.equal(await areaPreMinutes.inputValue(), '9', 'Area warning survives navigation');
+    await areaPreMode.selectOption('off');
+    await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
+    assert.equal(await areaPreMinutes.isVisible(), false);
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].notify_service), 'notify.guest', 'Warning off keeps the recipient');
+    await areaPreMode.selectOption('inherit');
+    await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].pre_notify_mode), 'inherit');
     assert.deepEqual(await page.evaluate(() => window.__config.shutter_areas["cover.testroom"]), ["south", "other"], "Saving must preserve area priority");
     console.log("OK - Area autosave is isolated from unsaved name and membership fields");
+    await card.locator('[data-settings-back-areas]').click();
 
     await page.evaluate(() => {
       window.__hass.language = "en";
@@ -195,6 +221,12 @@ async function main() {
     const guestAreaForm = card.locator("[data-notification-settings]");
     const guestAreaMode = guestAreaForm.locator("[data-notification-mode]");
     const guestAreaRecipient = guestAreaForm.locator("[data-notification-recipient]");
+    const guestAreaPreMode = guestAreaForm.locator('[data-pre-notify-mode]');
+    const guestAreaPreMinutes = guestAreaForm.locator('[data-pre-notify-minutes]');
+    await guestAreaPreMode.selectOption('custom');
+    await guestAreaPreMinutes.fill('5');
+    await guestAreaForm.locator("[data-notification-status]").filter({ hasText: "Saved automatically" }).waitFor();
+    assert.equal(await page.evaluate(() => window.__saved.at(-1).fields.pre_notify_lead_minutes), 5, 'Guests can save their area warning time');
     assert.deepEqual(await guestAreaMode.locator("option").allTextContents(), ["Inherit", "Off", "Custom recipient"]);
     assert.equal(await card.locator('[data-area-field="name"]').count(), 0, "Guest cannot edit the area name");
     await guestAreaMode.selectOption("off");
@@ -216,41 +248,59 @@ async function main() {
     await guestForm.locator("[data-notification-status]").filter({ hasText: "Saved automatically" }).waitFor();
     await page.setViewportSize({ width: 320, height: 844 });
     assert.equal(await guestForm.evaluate((el) => el.scrollWidth <= el.clientWidth), true);
+    await assertRecipientSpacing(guestForm);
     const infoBounds = async (details) => {
       const row = details.locator('..');
       const alignment = await row.evaluate(el => {
         const label = el.querySelector('label, h3');
-        const icon = el.querySelector('summary').getBoundingClientRect();
+        const icon = el.querySelector('[data-info-toggle]').getBoundingClientRect();
         const box = el.getBoundingClientRect();
         return { gap: icon.left - label.getBoundingClientRect().right, sameRow: Math.abs((label.getBoundingClientRect().top + label.getBoundingClientRect().bottom) / 2 - (icon.top + icon.bottom) / 2) < 2 };
       });
       assert.ok(alignment.gap >= 0 && alignment.gap <= 8 && alignment.sameRow, 'Info sits directly beside its text');
-      await details.locator("summary").click();
-      const bounds = await details.locator(".notification-info-text").evaluate((el) => {
+      await details.locator("[data-info-toggle]").click();
+      const bounds = await details.locator(".ssm-info-popover").evaluate((el) => {
         const tip = el.getBoundingClientRect();
-        const form = el.closest("[data-notification-settings]").getBoundingClientRect();
-        return { left: tip.left, right: tip.right, formLeft: form.left, formRight: form.right };
+        const form = el.getRootNode().querySelector("ha-card").getBoundingClientRect();
+        return { left: tip.left, right: tip.right, top: tip.top, bottom: tip.bottom, width: innerWidth, height: innerHeight, formLeft: form.left, formRight: form.right };
       });
-      assert.ok(bounds.left >= bounds.formLeft - 1 && bounds.right <= bounds.formRight + 1, "Hint stays within the form: " + JSON.stringify(bounds));
-      await details.locator("summary").click();
+      assert.ok(bounds.left >= bounds.formLeft - 1 && bounds.right <= bounds.formRight + 1, "Hint stays within the card: " + JSON.stringify(bounds));
+      assert.ok(bounds.left >= 0 && bounds.right <= bounds.width && bounds.top >= 0 && bounds.bottom <= bounds.height, "Hint stays within the viewport");
+      await page.keyboard.press("Escape");
+      assert.equal(await details.locator(".ssm-info-popover").isHidden(), true);
+      assert.equal(await details.locator("[data-info-toggle]").evaluate(el => el.getRootNode().activeElement === el), true);
+      await page.keyboard.press("Enter");
+      assert.equal(await details.locator(".ssm-info-popover").isVisible(), true);
+      await guestMode.click();
+      assert.equal(await details.locator(".ssm-info-popover").isHidden(), true);
     };
-    await infoBounds(guestForm.locator(".notification-title .notification-info"));
-    await infoBounds(guestForm.locator("[data-notification-recipient-hint] .notification-info"));
-    await infoBounds(guestForm.locator("[data-pre-notify-hint] .notification-info"));
+    await infoBounds(guestForm.locator(".ssm-info-heading-row .ssm-info-control"));
+    await infoBounds(guestForm.locator("[data-notification-recipient-hint] .ssm-info-control"));
+    await infoBounds(guestForm.locator("[data-pre-notify-hint] .ssm-info-control"));
     await page.setViewportSize({ width: 1280, height: 844 });
     const haCard = card.locator("ha-card");
     await haCard.evaluate((el) => { el.style.width = "260px"; el.style.maxWidth = "260px"; });
     assert.equal(await guestForm.evaluate((el) => el.scrollWidth <= el.clientWidth), true, "Notification form fits a narrow card");
-    await infoBounds(guestForm.locator(".notification-title .notification-info"));
-    await infoBounds(guestForm.locator("[data-notification-recipient-hint] .notification-info"));
-    await infoBounds(guestForm.locator("[data-pre-notify-hint] .notification-info"));
+    await infoBounds(guestForm.locator(".ssm-info-heading-row .ssm-info-control"));
+    await infoBounds(guestForm.locator("[data-notification-recipient-hint] .ssm-info-control"));
+    await infoBounds(guestForm.locator("[data-pre-notify-hint] .ssm-info-control"));
     await haCard.evaluate((el) => { el.style.removeProperty("width"); el.style.removeProperty("max-width"); });
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-areas"]').click();
+    await card.locator('[data-area-edit="south"]').click();
+    await assertRecipientSpacing(card.locator('[data-notification-settings]'));
     assert.deepEqual(await page.evaluate(() => window.__services), []);
     assert.deepEqual(errors, []);
     console.log("OK - English, guest area/shutter autosave, mobile fit, no real service calls");
   } finally {
     await browser.close();
   }
+}
+
+async function assertRecipientSpacing(form) {
+  const gap = await form.evaluate(el => el.querySelector('[data-notification-recipient-field]').getBoundingClientRect().top
+    - el.querySelector('[data-notification-mode]').getBoundingClientRect().bottom);
+  assert.ok(gap >= 14 && gap <= 16, `Custom recipient uses the standard 14px form gap: ${gap}`);
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });

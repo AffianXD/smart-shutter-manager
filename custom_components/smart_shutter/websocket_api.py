@@ -214,6 +214,12 @@ def _validate_area_notifications(hass, area, existing) -> None:
         notification_mode(existing), existing.get("notify_service")
     ):
         area.update(validate_notification_settings(hass, area))
+    warning_keys = ("pre_notify_mode", "pre_notify_lead_minutes")
+    if any(area.get(key) != existing.get(key) for key in warning_keys):
+        warning = validate_pre_notify_settings(area)
+        for key in warning_keys:
+            area.pop(key, None)
+        area.update(warning)
 
 
 def _compute_all_conflicts(schedules: list[dict]) -> dict[str, list[str]]:
@@ -827,6 +833,7 @@ async def handle_save_own_area_settings(hass, connection, msg):
         "sun_prenotify_enabled", "sun_prenotify_lead_minutes", "sun_prenotify_text",
         "inside_temp_sensor", "frost_threshold_c",
         "notify_service", "notification_mode",
+        "pre_notify_mode", "pre_notify_lead_minutes",
     }
     fields = {k: v for k, v in msg["fields"].items() if k in ALLOWED_FIELDS}
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.30.0
+
+- Unify notification information icons with the shared accessible info popovers, directly beside their labels.
+- Move longer explanations for seasonal profiles, onboarding areas, dashboard shortcuts, and temporal exceptions into the same info system in German and English; retain actionable help, states, validation, and save messages.
+- Configure scheduled pre-close warnings per area: inherit the global lead time, disable warnings, or set a custom lead time. Individual shutter overrides take priority, followed by the first explicitly configured assigned area; recipients and sun-position warnings remain independent.
+- Restore the standard form spacing before the custom notification service field in shutter and area settings.
+
 ## v0.29.0
 
 - Configure scheduled pre-close warnings per shutter independently: inherit the global lead time, disable warnings, or choose a custom lead time. Existing recipient and notification settings remain effective.

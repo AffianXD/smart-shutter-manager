@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 
 
 def validate_pre_notify_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    """Validate the independent closing-warning override for one shutter."""
+    """Validate the independent closing-warning override for a shutter or area."""
     mode = settings.get("pre_notify_mode", "inherit")
     if mode not in ("inherit", "off", "custom"):
         raise ValueError("Choose inherit, off, or custom for the closing warning.")

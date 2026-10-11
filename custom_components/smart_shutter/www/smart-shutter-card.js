@@ -1822,30 +1822,8 @@
           font-size: 0.85em; color: var(--ssm-muted); background: var(--ssm-card-bg);
           border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); padding: 10px 12px; margin: 12px 0;
         }
-        .notification-info { display: inline-block; vertical-align: middle; margin-left: 4px; }
-        .notification-info summary {
-          display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
-          border: 1px solid var(--ssm-border); border-radius: 50%; color: var(--ssm-muted); cursor: pointer;
-          font-size: 0.88em; font-weight: 700; line-height: 1; list-style: none;
-        }
-        .notification-info summary::-webkit-details-marker { display: none; }
-        .notification-info summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-        .notification-info-text {
-          position: absolute; z-index: 5; top: 32px; left: 0; width: min(280px, 100%); box-sizing: border-box;
-          padding: 10px 12px; border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm);
-          background: var(--ssm-card-bg); box-shadow: var(--ssm-shadow); color: var(--primary-text-color);
-          font-size: 0.82em; font-weight: 400; line-height: 1.4;
-        }
-        .notification-title { position: relative; display: flex; align-items: center; gap: 2px; }
-        .notification-title:has(h3) { margin: 22px 0 10px; }
-        .notification-title h3 { margin: 0; }
-        .notification-title .notification-info { margin-left: 4px; flex-shrink: 0; }
-        .notification-title .notification-info-text { left: 0; right: auto; }
-        .notification-hint { position: relative; display: flex; align-items: center; gap: 6px; width: 100%; margin-bottom: 5px; }
-        .form-field .notification-hint label { flex: 0 1 auto; min-width: 0; margin: 0; }
-        .notification-hint .notification-info { margin-left: 0; flex-shrink: 0; }
-        .notification-hint .notification-info-text { left: 0; right: auto; }
         .notification-status { display: block; min-height: 1.2em; margin: 4px 0 10px; font-size: 0.8em; color: var(--ssm-muted); }
+        [data-notification-recipient-field] { margin-top: 14px; }
         .ssm-info-control { display: inline-flex; vertical-align: middle; }
         .ssm-info-heading-row, .ssm-info-section-row, .ssm-info-label-row, .ssm-info-inline-label {
           display: flex; align-items: center; gap: 6px; min-width: 0;
@@ -1941,6 +1919,7 @@
           background: var(--ssm-card-bg); box-shadow: var(--ssm-shadow);
         }
         .onboarding-form-card h3, .onboarding-area-card h4 { margin: 0 0 6px; color: var(--primary-text-color); }
+        .onboarding-form-card .ssm-info-heading-row h3 { margin: 0; }
         .onboarding-trigger-grid, .onboarding-profile-grid, .onboarding-position-grid {
           display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px;
         }
@@ -3540,7 +3519,7 @@
         </section>
         <section class="onboarding-form-card">
           <h3>${de ? "Rollläden Bereichen zuordnen" : "Assign shutters to areas"}</h3>
-          <p class="meta">${de ? "Gruppiere Rollläden nach Etage oder Fassadenseite. Mehrere Bereiche pro Rollladen sind möglich; du kannst diesen Schritt überspringen." : "Group shutters by floor or side of the house. Shutters can belong to multiple areas; you can skip this step."}</p>
+          ${this._infoHint(de ? "Gruppiere Rollläden nach Etage oder Fassadenseite. Mehrere Bereiche pro Rollladen sind möglich; du kannst diesen Schritt überspringen." : "Group shutters by floor or side of the house. Shutters can belong to multiple areas; you can skip this step.")}
           ${areaCards || `<p class="empty">${de ? "Noch keine Bereiche angelegt. Du kannst unten einen Bereich erstellen oder diesen Schritt überspringen." : "No areas yet. Create one below or skip this step."}</p>`}
           <details class="onboarding-new-area" data-onboarding-new-area>
             <summary>${de ? "Neuen Bereich erstellen" : "Create a new area"}</summary>
@@ -4861,7 +4840,7 @@
     _renderHomeShortcuts() {
       const shortcuts = (this._backendConfig && this._backendConfig.shortcuts) || [];
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
-      html += `<h2>Dashboard shortcuts</h2><div class="hint">Create shortcuts for frequent actions and pages.</div><div class="hint">Changes apply to all users of this Smart Shutter instance.</div>`;
+      html += `<h2>Dashboard shortcuts</h2>${this._infoHint(this._language() === "de" ? "Erstelle Verknüpfungen für häufige Aktionen und Seiten. Änderungen gelten für alle Benutzer dieser Smart-Shutter-Instanz." : "Create shortcuts for frequent actions and pages. Changes apply to all users of this Smart Shutter instance.")}`;
       if (!shortcuts.length) {
         html += `<p class="empty">No shortcuts yet.</p>`;
       } else {
@@ -5192,11 +5171,11 @@
 
       const de = this._language() === "de";
       html += `<h3>${de ? "Sommer- und Winterprofile" : "Summer and winter profiles"}</h3>
+        ${this._infoHint(de ? "Verwendet die Home-Assistant-Zeitzone. Beim ersten Aktivieren werden die bisherigen Einstellungen in beide Profile übernommen." : "Uses the Home Assistant timezone. First activation copies existing settings into both profiles.")}
         <label class="control-row">
           <input type="checkbox" data-basic-field="seasonal_enabled" ${bs.seasonal_enabled ? "checked" : ""} />
           <span>${de ? "Automatisch mit der Zeitumstellung wechseln" : "Switch automatically with daylight saving time"}</span>
-        </label>
-        <div class="meta">${de ? "Verwendet die Home-Assistant-Zeitzone. Beim ersten Aktivieren werden die bisherigen Einstellungen in beide Profile übernommen." : "Uses the Home Assistant timezone. First activation copies existing settings into both profiles."}</div>`;
+        </label>`;
 
       // v0.19.3 Unification: instead of a single, 14 fields
       // long list is now sorted into three clearly named groups -
@@ -5316,7 +5295,6 @@
         : settings;
       const mode = this._notificationMode(displaySettings);
       const preMode = displaySettings.pre_notify_mode || "inherit";
-      const hintLabel = de ? "Hinweis anzeigen" : "Show information";
       const fieldId = this._escapeHtml(coverEntityId || areaId || "new-area");
       const precedenceHint = area
         ? (de ? "Vererben übernimmt die globale Einstellung. Einstellungen einzelner Rollläden haben Vorrang." : "Inherit uses the global setting. Individual shutter settings take priority.")
@@ -5326,11 +5304,11 @@
        : "Applies to movements, frost protection, pre-close warnings, and enabled sun notifications.";
       const notificationTitle = area ? "" : `<h3>${de ? "Benachrichtigungen" : "Notifications"}</h3>`;
      return `<div class="notification-settings" data-notification-settings data-notification-autosave="${autosave ? "true" : "false"}" ${coverEntityId ? `data-notification-entity="${this._escapeHtml(coverEntityId)}"` : ""} ${areaId ? `data-notification-area-id="${this._escapeHtml(areaId)}"` : ""}>
-        <div class="notification-title">${notificationTitle}<details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${appliesHint}</span></details></div>
+        ${area ? "" : notificationTitle + this._infoHint(appliesHint)}
         <div class="form-field">
-          <div class="notification-hint" data-notification-recipient-hint>
+          <div class="ssm-info-label-row" data-notification-recipient-hint>
             <label for="notification-mode-${fieldId}">${de ? "Benachrichtigungen empfangen" : "Receive notifications"}</label>
-            <details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${precedenceHint}</span></details>
+            ${this._infoHint(area ? appliesHint + " " + precedenceHint : precedenceHint)}
           </div>
             <select id="notification-mode-${fieldId}" data-notification-mode ${area ? 'data-area-field="notification_mode"' : ""}>
               <option value="inherit" ${mode === "inherit" ? "selected" : ""}>${de ? "Vererben" : "Inherit"}</option>
@@ -5343,23 +5321,24 @@
             <input type="text" data-notification-recipient ${area ? 'data-area-field="notify_service"' : ""} value="${this._escapeHtml(displaySettings.notify_service || "").replace(/"/g, "&quot;")}" placeholder="notify.mobile_app_phone" ${mode === "custom" ? "required" : ""} />
           </label>
         </div>
-        ${area ? "" : `<div class="form-field">
-          <div class="notification-hint" data-pre-notify-hint>
+        <div class="form-field">
+          <div class="ssm-info-label-row" data-pre-notify-hint>
             <label for="pre-notify-mode-${fieldId}">${de ? "Schließvorwarnung" : "Pre-close warning"}</label>
-            <details class="notification-info"><summary aria-label="${hintLabel}" title="${hintLabel}">i</summary><span class="notification-info-text">${de ? "Gilt nur für geplante Schließvorwarnungen. Empfänger und andere Meldungen bleiben wie oben eingestellt." : "Only affects scheduled pre-close warnings. Recipients and other notifications follow the settings above."}</span></details>
+            ${this._infoHint((de ? "Gilt nur für geplante Schließvorwarnungen. Empfänger und andere Meldungen bleiben wie oben eingestellt." : "Only affects scheduled pre-close warnings. Recipients and other notifications follow the settings above.") + " " + (area
+              ? (de ? "Vererben übernimmt die globale Vorwarnzeit. Einstellungen einzelner Rollläden haben Vorrang. Bei mehreren Bereichen gilt der erste ausdrücklich konfigurierte Bereich." : "Inherit uses the global warning time. Individual shutter settings take priority. With multiple areas, the first explicitly configured area wins.")
+              : (de ? "Vererben übernimmt die Bereichseinstellung, sonst die globale Vorwarnzeit. Bei mehreren Bereichen gilt der erste ausdrücklich konfigurierte Bereich." : "Inherit uses the area setting, otherwise the global warning time. With multiple areas, the first explicitly configured area wins.")))}
           </div>
-            <select id="pre-notify-mode-${fieldId}" data-pre-notify-mode>
-              <option value="inherit" ${preMode === "inherit" ? "selected" : ""}>${de ? "Globale Einstellung übernehmen" : "Use global setting"}</option>
+            <select id="pre-notify-mode-${fieldId}" data-pre-notify-mode ${area ? 'data-area-field="pre_notify_mode"' : ""}>
+              <option value="inherit" ${preMode === "inherit" ? "selected" : ""}>${area ? (de ? "Globale Einstellung übernehmen" : "Use global setting") : (de ? "Bereich / globale Einstellung übernehmen" : "Use area / global setting")}</option>
               <option value="off" ${preMode === "off" ? "selected" : ""}>${de ? "Vorwarnung ausschalten" : "Disable warning"}</option>
               <option value="custom" ${preMode === "custom" ? "selected" : ""}>${de ? "Eigene Vorwarnzeit" : "Custom warning time"}</option>
             </select>
         </div>
         <div class="form-field" data-pre-notify-minutes-field style="${preMode === "custom" ? "" : "display:none"}">
           <label>${de ? "Vorwarnzeit in Minuten" : "Warning time in minutes"}
-            <input type="number" data-pre-notify-minutes min="1" max="1440" step="1" value="${this._escapeHtml(String(displaySettings.pre_notify_lead_minutes ?? 5))}" />
+            <input type="number" data-pre-notify-minutes ${area ? 'data-area-field="pre_notify_lead_minutes"' : ""} min="1" max="1440" step="1" value="${this._escapeHtml(String(displaySettings.pre_notify_lead_minutes ?? 5))}" />
           </label>
         </div>
-        `}
         <span class="notification-status" data-notification-status role="status" aria-live="polite">${this._escapeHtml(state && state.statusText || "")}</span>
       </div>`;
     }
@@ -5478,7 +5457,11 @@
             type: "smart_shutter/save_own_area_settings",
             entry_id: state.entryId,
             area_id: state.areaId,
-            fields: { notification_mode: mode, notify_service: mode === "custom" ? notifyService : "" },
+            fields: {
+              notification_mode: mode, notify_service: mode === "custom" ? notifyService : "",
+              pre_notify_mode: preNotifyMode || "inherit",
+              ...(preNotifyMode === "custom" ? { pre_notify_lead_minutes: preNotifyMinutes } : {}),
+            },
           });
         } else {
           return;
@@ -5831,7 +5814,7 @@
       const notifySection = this._sectionToggle(
         "notify",
         "Benachrichtigungen (optional)",
-        !!(existing && this._notificationMode(existing) !== "inherit"),
+        !!(existing && (this._notificationMode(existing) !== "inherit" || (existing.pre_notify_mode && existing.pre_notify_mode !== "inherit"))),
         "Custom notification recipient ONLY for events in this area (movements, frost protection, sun position rule) - e.g. a guest's phone instead of your own. Empty = the global base setting is used."
       );
       html += notifySection.headerHtml;
@@ -6065,18 +6048,20 @@
         coverId ? ruleMatchesCover(rule, coverId) : areaId ? (rule.area_ids || []).includes(areaId) || memberIds.some((id) => ruleMatchesCover(rule, id)) : true
       );
       const key = this._exceptionSectionKey(coverId, areaId);
+      const expiredLimit = config.expired_exception_limit || 10;
+      const info = this._exceptionText("Ganztägig vom Start- bis einschließlich Enddatum. Danach gilt wieder der normale Zeitplan.", "Whole days, including both start and end dates. The normal schedule resumes afterwards.")
+        + (!coverId && !areaId ? " " + this._exceptionText(`Die letzten ${expiredLimit} abgelaufenen Ausnahmen bleiben zum Reaktivieren erhalten. Ältere Einträge werden automatisch entfernt.`, `The ${expiredLimit} most recent expired exceptions remain available for reactivation. Older entries are removed automatically.`) : "");
       let html = `<section${framed ? ' class="ssm-card"' : ""} data-temporal-exception-section data-temporal-cover="${this._escapeHtml(coverId || "")}" data-temporal-area="${this._escapeHtml(areaId || "")}" data-temporal-collapsible="${collapsible}" data-temporal-framed="${framed}">`;
       let expanded = true;
       if (collapsible) {
         const title = this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions");
-        const section = this._sectionToggle(key, title, false);
+        const section = this._sectionToggle(key, title, false, info);
         html += section.headerHtml;
         expanded = section.isOpen;
       } else {
-        html += `<h3>${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</h3>`;
+        html += `<h3>${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</h3>${this._infoHint(info)}`;
       }
       if (expanded) {
-        html += `<p class="hint">${this._exceptionText("Ganztägig vom Start- bis einschließlich Enddatum. Danach gilt wieder der normale Zeitplan.", "Whole days, including both start and end dates. The normal schedule resumes afterwards.")}</p>`;
         if (!rules.length) html += `<p class="empty">${this._exceptionText("Noch keine Ausnahmen angelegt.", "No exceptions created yet.")}</p>`;
         for (const rule of rules) {
           const id = this._escapeHtml(rule.id);
@@ -6099,10 +6084,8 @@
     }
 
     _renderSettingsExceptions() {
-      const expiredLimit = (this._backendConfig || {}).expired_exception_limit || 10;
       return `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`
         + this._renderExceptionSection(null, null, { framed: false })
-        + `<p class="hint">${this._exceptionText(`Die letzten ${expiredLimit} abgelaufenen Ausnahmen bleiben zum Reaktivieren erhalten. Ältere Einträge werden automatisch entfernt.`, `The ${expiredLimit} most recent expired exceptions remain available for reactivation. Older entries are removed automatically.`)}</p>`
         + `<button class="add-btn" data-settings-nav="${(this._backendConfig || {}).restricted ? "settings-areas" : "settings-schedules"}"><ha-icon icon="mdi:calendar-sync"></ha-icon> ${this._exceptionText("Wiederkehrende Zeitprofile", "Recurring time profiles")}</button>`;
     }
 
@@ -6126,6 +6109,7 @@
       const target = (id, name, type) => `<label><input type="${config.restricted ? "radio" : "checkbox"}" name="exception-${type}" data-exception-target="${type}" value="${this._escapeHtml(id)}" ${rule[type === "cover" ? "cover_ids" : "area_ids"].includes(id) ? "checked" : ""}> ${this._escapeHtml(name)}</label>`;
       return `<button class="back" data-exception-back><ha-icon icon="mdi:arrow-left"></ha-icon> ${this._exceptionText("Zurück", "Back")}</button>
         <h2>${existing ? this._exceptionText("Ausnahme bearbeiten", "Edit exception") : this._exceptionText("Neue Ausnahme", "New exception")}</h2>
+        ${this._infoHint((config.restricted ? this._exceptionText("Gilt für alle Rollläden im ausgewählten Bereich. ", "Applies to all shutters in the selected area. ") : "") + (this._exceptionText("Die manuelle Bedienung bleibt möglich. Uhrzeiten richten sich nach der Home-Assistant-Zeitzone.", "Manual control remains available. Times use the Home Assistant time zone.")))}
         ${this._exceptionReactivating ? `<p class="hint">${this._exceptionText("Der Zeitraum wird ab heute mit derselben Dauer neu angesetzt. Du kannst die Daten vor dem Speichern ändern.", "The date range restarts today for the same duration. You can change the dates before saving.")}</p>` : ""}
         <form data-exception-form><div class="form-grid">
           ${!config.restricted ? `<fieldset class="form-field exception-targets"><legend>${this._exceptionText("Rollläden", "Shutters")}</legend>${covers.map((c) => target(c.entity_id, c.name, "cover")).join("")}</fieldset>` : ""}
@@ -6142,7 +6126,7 @@
             <label for="exception-open">${this._exceptionText("Öffnen (optional)", "Opening (optional)")}</label><input id="exception-open" type="time" data-exception-field="open_time" value="${this._escapeHtml(rule.open_time || "")}">
             <label for="exception-close">${this._exceptionText("Schließen (optional)", "Closing (optional)")}</label><input id="exception-close" type="time" data-exception-field="close_time" value="${this._escapeHtml(rule.close_time || "")}">
             <p class="hint">${this._exceptionText("Leere Felder folgen dem bisherigen Zeitplan.", "Empty fields follow the existing schedule.")}</p></fieldset>
-        </div><p class="hint">${config.restricted ? this._exceptionText("Gilt für alle Rollläden im ausgewählten Bereich. ", "Applies to all shutters in the selected area. ") : ""}${this._exceptionText("Die manuelle Bedienung bleibt möglich. Uhrzeiten richten sich nach der Home-Assistant-Zeitzone.", "Manual control remains available. Times use the Home Assistant time zone.")}</p>
+        </div>
         <button type="button" class="save-btn" data-save-exception>Save</button><span class="save-status" data-exception-status-message role="status"></span></form>`;
     }
 
@@ -6515,10 +6499,18 @@
         frost_threshold_c: readFloat("frost_threshold_c"),
         notification_mode: readSelect("notification_mode") || this._notificationMode(existing || {}),
         notify_service: readText("notify_service"),
+        pre_notify_mode: readSelect("pre_notify_mode") || (existing && existing.pre_notify_mode) || "inherit",
+        pre_notify_lead_minutes: readNumber("pre_notify_lead_minutes"),
       };
       if (operationalFields.notification_mode !== "custom") operationalFields.notify_service = "";
       const recipient = body.querySelector("[data-notification-recipient]");
       if (operationalFields.notification_mode === "custom" && recipient && !recipient.reportValidity()) return;
+      if (operationalFields.pre_notify_mode === "custom") {
+        const minutes = body.querySelector("[data-pre-notify-minutes]");
+        if (minutes && (!minutes.value || !minutes.reportValidity())) return;
+      } else {
+        delete operationalFields.pre_notify_lead_minutes;
+      }
       if (
         operationalFields.sun_position_enabled &&
         (operationalFields.sun_azimuth_from === null ||
