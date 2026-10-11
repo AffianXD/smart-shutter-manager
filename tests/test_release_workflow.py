@@ -18,7 +18,9 @@ TARGET = "2f0f5e8ba93ce01594229d284149d3fe3731a6c0"
 @pytest.fixture
 def publication(tmp_path):
     workflow = yaml.safe_load(WORKFLOW.read_text())
-    step = workflow["jobs"]["publish-release"]["steps"][0]
+    step = next(step for step in workflow["jobs"]["publish-release"]["steps"]
+                if step.get("name") == "Create GitHub release")
+    (tmp_path / "python").symlink_to(sys.executable)
     cli = tmp_path / "gh"
     cli.write_text(
         f"#!{sys.executable}\n"
@@ -42,19 +44,21 @@ def publication(tmp_path):
     )
     cli.chmod(0o755)
 
-    def run(releases="", query_error="", create_status=0):
+    def run(releases="", query_error="", create_status=0, release_tag="v0.29.0"):
         log = tmp_path / "calls.jsonl"
         env = {
             **os.environ,
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "GITHUB_REPOSITORY": REPOSITORY,
-            "RELEASE_TAG": "v0.29.0",
+            "RELEASE_TAG": release_tag,
             "RELEASE_TARGET": TARGET,
             "CALL_LOG": str(log),
             "RELEASES": releases,
             "QUERY_ERROR": query_error,
             "CREATE_STATUS": str(create_status),
             "GIT_CEILING_DIRECTORIES": str(tmp_path.parent),
+            "PYTHONPATH": str(WORKFLOW.parents[2]),
+            "RUNNER_TEMP": str(tmp_path),
         }
         result = subprocess.run(
             ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]],
@@ -73,11 +77,18 @@ def publication(tmp_path):
 def test_missing_release_created_in_explicit_repo_at_original_commit(publication, releases):
     result, calls = publication(releases)
     assert result.returncode == 0, result.stderr
-    assert calls == [
-        ["api", "--paginate", f"repos/{REPOSITORY}/releases", "--jq", ".[].tag_name"],
-        ["release", "create", "v0.29.0", "--repo", REPOSITORY,
-         "--target", TARGET, "--title", "v0.29.0", "--generate-notes"],
+    assert calls[0] == [
+        "api", "--paginate", f"repos/{REPOSITORY}/releases", "--jq", ".[].tag_name",
     ]
+    assert len(calls) == 2
+    assert calls[1][:-1] == [
+        "release", "create", "v0.29.0", "--repo", REPOSITORY,
+        "--target", TARGET, "--title", "v0.29.0", "--notes-file",
+    ]
+    notes = Path(calls[1][-1]).read_text()
+    assert notes.startswith("## v0.29.0\n")
+    assert "Configure scheduled pre-close warnings per shutter" in notes
+    assert "## v0.28.2" not in notes
 
 
 def test_existing_release_on_later_page_left_unchanged(publication):
@@ -106,6 +117,13 @@ def test_create_failure_fails_job(publication):
     assert len(calls) == 2
 
 
+def test_missing_changelog_section_never_creates_release(publication):
+    result, calls = publication(release_tag="v9.99.0")
+    assert result.returncode != 0
+    assert "no non-empty section" in result.stderr
+    assert len(calls) == 1
+
+
 def test_publication_still_requires_all_validation_jobs_and_candidate():
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
     publish = jobs["publish-release"]
@@ -117,7 +135,12 @@ def test_publication_still_requires_all_validation_jobs_and_candidate():
     assert "github.event_name == 'push'" in publish["if"]
     assert "github.event.deleted != true" in publish["if"]
     assert "needs.release-candidate.outputs.tag != ''" in publish["if"]
-    step = publish["steps"][0]
+    checkout = publish["steps"][0]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["ref"] == "${{ github.sha }}"
+    assert checkout["with"]["persist-credentials"] is False
+    step = next(step for step in publish["steps"]
+                if step.get("name") == "Create GitHub release")
     assert step["env"]["RELEASE_TARGET"] == "${{ github.sha }}"
     assert step["env"]["RELEASE_TAG"] == "${{ needs.release-candidate.outputs.tag }}"
     candidate = jobs["release-candidate"]["steps"][-1]["run"]
