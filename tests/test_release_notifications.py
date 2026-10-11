@@ -39,6 +39,47 @@ async def invoke(hass, handler, conn, **msg):
     conn.async_handle_exception.assert_not_called()
 
 
+@pytest.mark.parametrize("service", ["notify.missing", "cover.open_cover", "phone"])
+async def test_global_rejects_new_invalid_recipient_without_mutation(hass, service):
+    entry, _ = setup_entry(hass)
+    before = dict(entry.options)
+    conn = connection(admin=True)
+    await invoke(hass, ws.handle_save_basic_settings, conn, notify_service=service, pre_notify_lead_minutes=12)
+    assert conn.send_error.call_args.args[1] == "invalid_notifications"
+    assert dict(entry.options) == before
+
+
+async def test_global_retains_unavailable_saved_recipient_and_accepts_registered_replacement(hass):
+    entry, _ = setup_entry(hass)
+    conn = connection(admin=True)
+    await invoke(hass, ws.handle_save_basic_settings, conn, notify_service="notify.owner", pre_notify_lead_minutes=12)
+    conn.send_error.assert_not_called()
+    assert entry.options["notify_service"] == "notify.owner"
+    assert entry.options["pre_notify_lead_minutes"] == 12
+    hass.services.async_register("notify", "phone", lambda call: None)
+    await invoke(hass, ws.handle_save_basic_settings, conn, notify_service="notify.phone")
+    assert entry.options["notify_service"] == "notify.phone"
+    await invoke(hass, ws.handle_save_basic_settings, conn, notify_service="")
+    assert "notify_service" not in entry.options
+
+
+async def test_warning_edits_retain_unavailable_saved_shutter_recipient(hass):
+    entry, _ = setup_entry(hass, shutter_notifications={"cover.one": {
+        "notification_mode": "custom", "notify_service": "notify.missing",
+    }})
+    conn = connection()
+    await invoke(hass, ws.handle_save_shutter_notifications, conn, entity_id="cover.one",
+        notification_mode="custom", notify_service="notify.missing", pre_notify_mode="off")
+    conn.send_error.assert_not_called()
+    assert entry.options["shutter_notifications"]["cover.one"] == {
+        "notification_mode": "custom", "notify_service": "notify.missing", "pre_notify_mode": "off",
+    }
+    await invoke(hass, ws.handle_save_shutter_notifications, conn, entity_id="cover.one",
+        notification_mode="custom", notify_service="notify.other_missing", pre_notify_mode="off")
+    assert conn.send_error.call_args.args[1] == "invalid_notifications"
+    assert entry.options["shutter_notifications"]["cover.one"]["notify_service"] == "notify.missing"
+
+
 @pytest.mark.parametrize("shutter,areas,global_service,expected", [
     ({}, [], "notify.owner", "notify.owner"),
     ({}, [], None, None),

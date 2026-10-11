@@ -467,6 +467,14 @@ async def handle_save_basic_settings(hass, connection, msg):
         return
 
     data = dict(entry.options)
+    if "notify_service" in msg:
+        value = (msg["notify_service"] or "").strip()
+        if value and value != (entry.options.get(CONF_NOTIFY_SERVICE) or "").strip():
+            try:
+                validate_notification_settings(hass, {"notification_mode": "custom", "notify_service": value})
+            except ValueError as err:
+                connection.send_error(msg["id"], "invalid_notifications", str(err))
+                return
     if CONF_SEASONAL_ENABLED in msg:
         data[CONF_SEASONAL_ENABLED] = msg[CONF_SEASONAL_ENABLED]
         coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
@@ -1136,8 +1144,14 @@ async def handle_save_shutter_notifications(hass, connection, msg):
         connection.send_error(msg["id"], "not_found", "Managed shutter not found.")
         return
     try:
-        settings = validate_notification_settings(hass, msg)
         previous = coordinator.shutter_notifications.get(entity_id, {})
+        # An unavailable saved recipient must not block independent warning
+        # edits. New or changed recipients still require a registered service.
+        if (notification_mode(msg) == "custom" == notification_mode(previous)
+                and msg.get("notify_service") == previous.get("notify_service")):
+            settings = {"notification_mode": "custom", "notify_service": previous["notify_service"]}
+        else:
+            settings = validate_notification_settings(hass, msg)
         if "pre_notify_mode" in msg or "pre_notify_lead_minutes" in msg:
             warning_fields = {**previous, **msg}
             warning = validate_pre_notify_settings(warning_fields)

@@ -1822,6 +1822,7 @@
           font-size: 0.85em; color: var(--ssm-muted); background: var(--ssm-card-bg);
           border: 1px solid var(--ssm-border); border-radius: var(--ssm-radius-sm); padding: 10px 12px; margin: 12px 0;
         }
+        .notification-settings > .form-field { margin-bottom: 16px; }
         .notification-status { display: block; min-height: 1.2em; margin: 4px 0 10px; font-size: 0.8em; color: var(--ssm-muted); }
         [data-notification-recipient-field] { margin-top: 14px; }
         .ssm-info-control { display: inline-flex; vertical-align: middle; }
@@ -2784,6 +2785,7 @@
         const form = notificationMode.closest("[data-notification-settings]");
         form.querySelector("[data-notification-recipient-field]").style.display = notificationMode.value === "custom" ? "" : "none";
         form.querySelector("[data-notification-recipient]").required = notificationMode.value === "custom";
+        this._mountNotificationPickers(form);
         const status = form.querySelector("[data-notification-status]");
         if (status) status.textContent = "";
         const recipient = form.querySelector("[data-notification-recipient]");
@@ -3045,6 +3047,7 @@
       });
       this._syncControlValues(body);
       this._mountEntityPickers(body);
+      this._mountNotificationPickers(body);
 
       body.querySelectorAll("[data-row-meta]").forEach((el) => {
         const s = this._shutterByDeviceId(el.getAttribute("data-row-meta"));
@@ -3148,6 +3151,7 @@
       // Sets current values in form controls (no re-render on every key press)
       this._syncControlValues(body);
       this._mountEntityPickers(body);
+      this._mountNotificationPickers(body);
       this._syncShortcutEditorFields();
       this._localizeDom();
     }
@@ -5146,6 +5150,95 @@
     }
 
 
+    _notificationPickerField(value, attributes, required = false) {
+      return `<div data-notify-picker>
+        <input type="hidden" ${attributes} value="${this._escapeHtml(value || "").replace(/"/g, "&quot;")}" ${required ? "required" : ""} />
+        <div data-notify-control></div>
+        <div class="meta" data-notify-availability role="status" aria-live="polite"></div>
+      </div>`;
+    }
+
+    async _loadNotificationPicker() {
+      if (customElements.get("ha-service-picker") || this._notificationPickerLoading || !window.loadCardHelpers) return;
+      this._notificationPickerLoading = true;
+      try {
+        // The built-in button editor imports HA's service controls. Use HA's
+        // loader rather than depending on hashed frontend bundle paths.
+        const helpers = await window.loadCardHelpers();
+        const card = await helpers.createCardElement({ type: "button" });
+        await card.constructor.getConfigElement();
+        if (this.isConnected) this._mountNotificationPickers(this.shadowRoot);
+      } catch (err) {
+        // Keep the service-backed dropdown usable if frontend loading fails.
+      } finally {
+        this._notificationPickerLoading = false;
+      }
+    }
+
+    _mountNotificationPickers(root) {
+      const slots = root.querySelectorAll("[data-notify-picker]");
+      if (!slots.length) return;
+      const de = this._language() === "de";
+      const services = this._hass.services;
+      const notify = services?.notify || {};
+      const native = !!customElements.get("ha-service-picker");
+      if (!native) this._loadNotificationPicker();
+      slots.forEach((slot) => {
+        const input = slot.querySelector("input");
+        const holder = slot.querySelector("[data-notify-control]");
+        let picker = holder.firstElementChild;
+        const tag = native ? "ha-service-picker" : "select";
+        if (!picker || picker.localName !== tag) {
+          picker = document.createElement(tag);
+          picker.style.cssText = "display:block;width:100%;min-width:0";
+          picker.setAttribute("aria-label", de ? "Benachrichtigungsdienst" : "Notification service");
+          const onSelect = (ev) => {
+            ev.stopPropagation();
+            const value = (native ? ev.detail?.value : picker.value) || "";
+            // Ignore initialization events and reject arbitrary/non-notify IDs.
+            if (value === input.value || (value && (!value.startsWith("notify.") || !Object.hasOwn(this._hass.services?.notify || {}, value.slice(7))))) return;
+            input.value = value;
+            this._mountNotificationPickers(root);
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          picker.addEventListener(native ? "value-changed" : "change", onSelect);
+          // HA also emits change; only value-changed should autosave.
+          if (native) picker.addEventListener("change", (ev) => ev.stopPropagation());
+          holder.replaceChildren(picker);
+        }
+        if (native) {
+          // ha-service-picker has no domain filter. Give it a scoped registry
+          // without mutating HA's shared hass object or its service registry.
+          picker.hass = { ...this._hass, services: { notify } };
+          picker.label = de ? "Benachrichtigungsdienst" : "Notification service";
+          picker.showServiceId = true;
+          picker.value = input.value;
+        } else {
+          const options = [{ value: "", label: de ? "Kein Empfänger" : "No recipient" }];
+          Object.entries(notify).forEach(([name, info]) => {
+            const id = `notify.${name}`;
+            const label = this._hass.localize?.(`component.notify.services.${name}.name`, info.description_placeholders) || info.name || name.replace(/_/g, " ");
+            options.push({ value: id, label: `${label} (${id})` });
+          });
+          if (input.value && !options.some((o) => o.value === input.value)) options.push({ value: input.value, label: input.value });
+          const signature = JSON.stringify(options);
+          if (picker.dataset.options !== signature) {
+            picker.replaceChildren(...options.map((o) => new Option(o.label, o.value)));
+            picker.dataset.options = signature;
+          }
+          picker.value = input.value;
+        }
+        const missing = input.value && (!input.value.startsWith("notify.") || !Object.hasOwn(notify, input.value.slice(7)));
+        slot.querySelector("[data-notify-availability]").textContent = !services
+          ? (de ? "Benachrichtigungsdienste werden geladen. Gespeicherte Empfänger bleiben erhalten." : "Loading notification services. Saved recipients are retained.")
+          : missing
+            ? (de ? `Gespeicherter Dienst ${input.value} ist derzeit nicht verfügbar. Bitte Dienst prüfen oder einen anderen Empfänger wählen.` : `Saved service ${input.value} is currently unavailable. Check the service or choose another recipient.`)
+            : !Object.keys(notify).length
+              ? (de ? "Keine Benachrichtigungsdienste verfügbar." : "No notification services available.")
+              : (!input.required ? (de ? "Kein Empfänger = Benachrichtigungen aus." : "No recipient = notifications off.") : "");
+      });
+    }
+
     _renderSettingsBasic() {
       const bs = (this._backendConfig && this._backendConfig.basic_settings) || {};
       const field = (key, label, value, type = "text", hint = "") => `
@@ -5204,7 +5297,7 @@
       );
 
       html += `<h3>Notifications</h3>`;
-      html += field("notify_service", "Notification service", bs.notify_service, "text", "e.g. notify.notify, empty = off");
+      html += this._notificationPickerField(bs.notify_service, 'data-basic-field="notify_service"');
       html += field(
         "pre_notify_lead_minutes", "Vorwarnung vor dem Schließen (Minuten)",
         bs.pre_notify_lead_minutes, "number"
@@ -5317,9 +5410,7 @@
             </select>
         </div>
         <div class="form-field" data-notification-recipient-field style="${mode === "custom" ? "" : "display:none"}">
-          <label>${de ? "Benachrichtigungsdienst" : "Notification service"}
-            <input type="text" data-notification-recipient ${area ? 'data-area-field="notify_service"' : ""} value="${this._escapeHtml(displaySettings.notify_service || "").replace(/"/g, "&quot;")}" placeholder="notify.mobile_app_phone" ${mode === "custom" ? "required" : ""} />
-          </label>
+          ${this._notificationPickerField(displaySettings.notify_service, `data-notification-recipient ${area ? 'data-area-field="notify_service"' : ""}`, mode === "custom")}
         </div>
         <div class="form-field">
           <div class="ssm-info-label-row" data-pre-notify-hint>
@@ -6504,7 +6595,7 @@
       };
       if (operationalFields.notification_mode !== "custom") operationalFields.notify_service = "";
       const recipient = body.querySelector("[data-notification-recipient]");
-      if (operationalFields.notification_mode === "custom" && recipient && !recipient.reportValidity()) return;
+      if (operationalFields.notification_mode === "custom" && recipient && !recipient.value.trim()) return;
       if (operationalFields.pre_notify_mode === "custom") {
         const minutes = body.querySelector("[data-pre-notify-minutes]");
         if (minutes && (!minutes.value || !minutes.reportValidity())) return;

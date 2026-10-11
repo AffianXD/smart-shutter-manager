@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.31.0
+
+- Select registered notification services using Home Assistant's native service picker in global, area, and shutter settings. Retain saved recipients and show unavailable services without overwriting them; keep notification inheritance and independent closing warnings unchanged.
+- Add spacing between recipient selection, the notification service picker, and closing-warning settings.
+
 ## v0.30.0
 
 - Unify notification information icons with the shared accessible info popovers, directly beside their labels.

@@ -25,7 +25,7 @@ const output = path.join(state.runtime, "review-artifacts");
 fs.mkdirSync(output, { recursive: true, mode: 0o700 });
 const virtual = new Set(["cover.codex_ui_test_alpha", "cover.codex_ui_test_beta", "cover.codex_ui_test_gamma"]);
 const reads = new Set(["auth", "auth/features", "auth/current_user", "http/config", "ping", "get_config", "get_states", "get_services",
-  "get_panels", "subscribe_events", "unsubscribe_events", "subscribe_entities", "frontend/get_themes", "frontend/get_translations",
+  "get_panels", "subscribe_events", "unsubscribe_events", "subscribe_entities", "frontend/get_themes", "frontend/get_translations", "frontend/get_icons",
   "frontend/get_user_data", "frontend/subscribe_user_data", "frontend/subscribe_system_data", "config/entity_registry/list",
   "config/entity_registry/list_for_display", "config/device_registry/list", "config/area_registry/list", "config/floor_registry/list",
   "config/label_registry/list", "config/category_registry/list", "config/auth/list", "lovelace/config", "lovelace/dashboards/list",
@@ -93,6 +93,53 @@ async function main() {
     assert.equal(await card.locator("[data-managed-cover]").count(), 3);
     await verifyInfoPopover(page, card, "Rollläden auswählen", path.join(output, "info-popover-desktop.png"));
     await page.screenshot({ path: path.join(output, "management-desktop.png"), fullPage: true });
+
+    // Inspect the real Home Assistant service picker without changing a
+    // notification setting or calling a service.
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-basic"]').click();
+    const globalNotifyPicker = card.locator('[data-notify-picker] ha-service-picker').first();
+    await globalNotifyPicker.waitFor();
+    await assertNotifyPicker(globalNotifyPicker);
+    await page.screenshot({ path: path.join(output, "notify-picker-global-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.screenshot({ path: path.join(output, "notify-picker-global-mobile.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-areas"]').click();
+    const areaEdit = card.locator('[data-area-edit]').first();
+    await areaEdit.waitFor();
+    await areaEdit.click();
+    const areaNotifyToggle = card.locator('.section-toggle[data-toggle-area-section="notify"]');
+    await areaNotifyToggle.waitFor();
+    await card.evaluate(el => { el._areaSectionExpanded.notify = true; el._render(); });
+    const areaNotifyPicker = card.locator('[data-notification-settings] [data-notify-picker] ha-service-picker').first();
+    await areaNotifyPicker.waitFor({ state: "attached" });
+    await assertNotifyPicker(areaNotifyPicker);
+    await card.locator('[data-notification-recipient-field]').evaluate(el => { el.style.display = "block"; });
+    await page.screenshot({ path: path.join(output, "notify-picker-area-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.screenshot({ path: path.join(output, "notify-picker-area-mobile.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    await card.locator('[data-nav="list"]').first().click();
+    await card.locator('[data-open-detail]').first().click();
+    await card.locator('[data-tab="advanced"]').click();
+    const shutterNotifyPicker = card.locator('[data-notification-settings] [data-notify-picker] ha-service-picker').first();
+    await shutterNotifyPicker.waitFor({ state: "attached" });
+    await assertNotifyPicker(shutterNotifyPicker);
+    await card.locator('[data-notification-recipient-field]').evaluate(el => { el.style.display = "block"; });
+    await page.screenshot({ path: path.join(output, "notify-picker-shutter-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.screenshot({ path: path.join(output, "notify-picker-shutter-mobile.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     await card.locator('[data-nav="settings"]').click();
     await card.locator('[data-settings-nav="settings-exceptions"]').click();
@@ -196,13 +243,21 @@ async function main() {
     assert.deepEqual(errors, []);
     assert.deepEqual(blocked, [], "Baseline should not attempt writes or unknown requests");
     const report = { url: state.url, project: state.project, source_hash: state.source_hash,
-      desktop: true, mobile: true, global_exceptions_always_visible: true, shutter_exceptions_collapsed: true, errors, blocked };
+      desktop: true, mobile: true, notification_picker_global: true, notification_picker_area: true,
+      notification_picker_shutter: true, global_exceptions_always_visible: true, shutter_exceptions_collapsed: true, errors, blocked };
     fs.writeFileSync(path.join(output, "ui-result.json"), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report));
   } finally {
     await context.close();
     await browser.close();
   }
+}
+
+async function assertNotifyPicker(picker) {
+  const services = await picker.evaluate(el => Object.keys(el.hass.services || {}));
+  assert.deepEqual(services, ["notify"], "Native service picker is scoped to notification services");
+  assert.equal(await picker.evaluate(el => el.showServiceId), true, "Picker shows the registered service ID");
+  assert.equal(await picker.getAttribute("aria-label"), "Benachrichtigungsdienst");
 }
 
 async function verifyInfoPopover(page, card, expectedText, screenshotPath) {
