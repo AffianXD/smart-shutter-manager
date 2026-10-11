@@ -177,10 +177,18 @@ jobs:
           RELEASE_TAG: ${{ needs.release-candidate.outputs.tag }}
           RELEASE_TARGET: ${{ github.sha }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          # A successful, complete listing distinguishes absence from API/auth errors.
+          # Explicit repository paths also work without a checkout in this job.
+          if ! RELEASE_TAGS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')"; then
+            echo "::error::Could not query releases for $GITHUB_REPOSITORY."
+            exit 1
+          fi
+
+          if grep -Fxq -- "$RELEASE_TAG" <<< "$RELEASE_TAGS"; then
             echo "Release $RELEASE_TAG already exists; leaving it unchanged."
           else
             gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
               --target "$RELEASE_TARGET" \
               --title "$RELEASE_TAG" \
               --generate-notes
