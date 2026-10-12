@@ -18,7 +18,13 @@ async function main() {
       window.__saved = [];
       window.__services = [];
       window.__delayNextNotificationSave = false;
+      window.__delayNextBasicSave = false;
+      window.__failNextBasicSave = false;
+      window.__failNextNoteSave = false;
       window.__notificationSaveDelayEntered = false;
+      window.__delayNextAreaSave = false;
+      window.__areaSaveDelayEntered = false;
+      window.__rejectNextMembership = false;
       window.__config = {
         entry_id: "entry1", basic_settings: {},
         covers: [fx.coverEntityId, fx.coverEntityId2].map((entity_id) => ({ entity_id, name: entity_id })),
@@ -38,10 +44,32 @@ async function main() {
           if (msg.type === "smart_shutter/get_forecast") return { forecast: {} };
           if (msg.type.startsWith("smart_shutter/save_")) {
             window.__saved.push(msg);
+            if (msg.type === "smart_shutter/save_custom_areas" && window.__delayNextAreaSave) {
+              window.__delayNextAreaSave = false;
+              window.__areaSaveDelayEntered = true;
+              await new Promise((resolve) => setTimeout(resolve, 350));
+            }
+            if (msg.type === "smart_shutter/save_shutter_areas" && window.__rejectNextMembership) {
+              window.__rejectNextMembership = false;
+              return { success: false, validation_error: "conflicting_temporal_exceptions" };
+            }
             if (msg.type === "smart_shutter/save_shutter_notifications" && window.__delayNextNotificationSave) {
               window.__delayNextNotificationSave = false;
               window.__notificationSaveDelayEntered = true;
               await new Promise((resolve) => setTimeout(resolve, 350));
+            }
+            if (msg.type === "smart_shutter/save_basic_settings" && window.__delayNextBasicSave) {
+              window.__delayNextBasicSave = false;
+              window.__basicSaveDelayEntered = true;
+              await new Promise((resolve) => setTimeout(resolve, 800));
+            }
+            if (msg.type === "smart_shutter/save_basic_settings" && window.__failNextBasicSave) {
+              window.__failNextBasicSave = false;
+              throw new Error("Temporary basic save failure");
+            }
+            if (msg.type === "smart_shutter/save_shutter_note" && window.__failNextNoteSave) {
+              window.__failNextNoteSave = false;
+              throw new Error("Temporary note save failure");
             }
             const settings = msg.type === "smart_shutter/save_custom_areas" ? msg.areas.find((area) => area.id === "south") : msg.fields || msg;
             if (settings.notification_mode === "custom" && settings.notify_service !== "notify.guest") throw new Error("Select a registered notify service.");
@@ -52,6 +80,11 @@ async function main() {
             if (msg.type === "smart_shutter/save_custom_areas") window.__config.custom_areas = structuredClone(msg.areas);
             if (msg.type === "smart_shutter/save_shutter_areas") window.__config.shutter_areas = structuredClone(msg.shutter_areas);
             if (msg.type === "smart_shutter/save_own_area_settings") Object.assign(window.__config.custom_areas[0], msg.fields);
+            if (msg.type === "smart_shutter/save_basic_settings") Object.assign(window.__config.basic_settings, msg);
+            if (msg.type === "smart_shutter/save_shutter_note") {
+              window.__config.shutter_notes ||= {};
+              window.__config.shutter_notes[msg.entity_id] = msg.note;
+            }
             return { success: true };
           }
           return {};
@@ -163,7 +196,7 @@ async function main() {
     const areaForm = card.locator("[data-notification-settings]");
     const areaMode = areaForm.locator("[data-notification-mode]");
     const areaRecipient = areaForm.locator("[data-notify-control] select");
-   const areaStatus = areaForm.locator("[data-notification-status]");
+   const areaStatus = card.locator("[data-save-status]");
    assert.equal(await areaForm.locator(".ssm-info-heading-row h3").count(), 0, "Area accordion does not repeat its notification heading inside");
    assert.equal(await areaMode.inputValue(), "custom", "Legacy area recipient is preserved");
    assert.equal(await areaForm.locator("[data-info-toggle][aria-expanded=true]").count(), 0, "Area hints are also collapsed");
@@ -180,7 +213,7 @@ async function main() {
     assert.equal(await page.evaluate(() => window.__saved.filter((msg) => msg.type === "smart_shutter/save_shutter_areas").length), membershipWrites, "Invalid settings must not change membership");
     await areaRecipient.selectOption("notify.guest");
     await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.__saved.at(-1).fields).sort()), ["notification_mode", "notify_service", "pre_notify_mode"], "Autosave updates only the area's notification settings");
+    assert.equal(await page.evaluate(() => window.__saved.at(-1).type), "smart_shutter/save_custom_areas", "Area notification changes use the ordered area save");
     const areaPreMode = areaForm.locator('[data-pre-notify-mode]');
     await assertRecipientSpacing(areaForm);
     const areaPreMinutes = areaForm.locator('[data-pre-notify-minutes]');
@@ -210,8 +243,40 @@ async function main() {
     await areaStatus.filter({ hasText: "Automatisch gespeichert" }).waitFor();
     assert.equal(await page.evaluate(() => window.__config.custom_areas[0].pre_notify_mode), 'inherit');
     assert.deepEqual(await page.evaluate(() => window.__config.shutter_areas["cover.testroom"]), ["south", "other"], "Saving must preserve area priority");
-    console.log("OK - Area autosave is isolated from unsaved name and membership fields");
+    await page.evaluate(() => { window.__delayNextAreaSave = true; });
+    await card.locator('[data-area-field="name"]').fill('Older draft');
+    await page.waitForFunction(() => window.__areaSaveDelayEntered);
+    await card.locator('[data-area-field="name"]').fill('Newest draft');
+    await areaStatus.filter({ hasText: 'Automatisch gespeichert' }).waitFor();
+    assert.equal(await card.locator('[data-area-field="name"]').inputValue(), 'Newest draft');
+    assert.equal(await page.evaluate(() => window.__config.custom_areas[0].name), 'Newest draft', 'Late responses cannot replace newer drafts');
+    await page.evaluate(() => { window.__rejectNextMembership = true; });
+    await card.locator('[data-area-member="cover.testroom2"]').uncheck();
+    await areaStatus.filter({ hasText: 'überlappende Fahrzeiten-Ausnahmen' }).waitFor();
+    assert.equal(await card.locator('[data-area-member="cover.testroom2"]').isChecked(), false, 'Failed membership keeps the draft');
+    await card.locator('[data-area-retry]').click();
+    await areaStatus.filter({ hasText: 'Automatisch gespeichert' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.shutter_areas['cover.testroom2']), undefined, 'Retry persists membership');
+    console.log("OK - Area form and notification settings autosave together");
     await card.locator('[data-settings-back-areas]').click();
+    await card.locator('[data-area-edit="__new__"]').click();
+    await card.locator('[data-area-field="name"]').fill('   ');
+    const beforeInvalidCreate = await page.evaluate(() => window.__saved.length);
+    await card.locator('[data-area-save]').click();
+    await card.locator('[data-save-status]').filter({ hasText: 'Namen' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__saved.length), beforeInvalidCreate, 'A blank new name never reaches the backend');
+    await card.locator('[data-area-field="name"]').fill('Test area');
+    await card.locator('[data-area-save]').click();
+    await card.locator('[data-area-edit="__new__"]').waitFor();
+    assert.equal(await page.evaluate(() => window.__config.custom_areas.some((area) => area.name === 'Test area')), true);
+    const createdAreaId = await page.evaluate(() => window.__config.custom_areas.find((area) => area.name === 'Test area').id);
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await card.locator(`[data-area-delete="${createdAreaId}"]`).click();
+    assert.equal(await page.evaluate((id) => window.__config.custom_areas.some((area) => area.id === id), createdAreaId), true);
+    page.once('dialog', (dialog) => dialog.accept());
+    await card.locator(`[data-area-delete="${createdAreaId}"]`).click();
+    await card.locator(`[data-area-delete="${createdAreaId}"]`).waitFor({ state: 'detached' });
+    console.log('OK - New area name validation and confirmed deletion');
 
     await page.evaluate(() => {
       window.__hass.language = "en";
@@ -227,17 +292,17 @@ async function main() {
     const guestAreaPreMinutes = guestAreaForm.locator('[data-pre-notify-minutes]');
     await guestAreaPreMode.selectOption('custom');
     await guestAreaPreMinutes.fill('5');
-    await guestAreaForm.locator("[data-notification-status]").filter({ hasText: "Saved automatically" }).waitFor();
+    await card.locator("[data-save-status]").filter({ hasText: "Saved automatically" }).waitFor();
     assert.equal(await page.evaluate(() => window.__saved.at(-1).fields.pre_notify_lead_minutes), 5, 'Guests can save their area warning time');
     assert.deepEqual(await guestAreaMode.locator("option").allTextContents(), ["Inherit", "Off", "Custom recipient"]);
     assert.equal(await card.locator('[data-area-field="name"]').count(), 0, "Guest cannot edit the area name");
     await guestAreaMode.selectOption("off");
-    await guestAreaForm.locator("[data-notification-status]").filter({ hasText: "Saved automatically" }).waitFor();
+    await card.locator("[data-save-status]").filter({ hasText: "Saved automatically" }).waitFor();
     assert.equal(await page.evaluate(() => window.__saved.at(-1).type), "smart_shutter/save_own_area_settings");
     await guestAreaMode.selectOption("custom");
     await assertRecipientSpacing(guestAreaForm);
     await guestAreaRecipient.selectOption("notify.guest");
-    await guestAreaForm.locator("[data-notification-status]").filter({ hasText: "Saved automatically" }).waitFor();
+    await card.locator("[data-save-status]").filter({ hasText: "Saved automatically" }).waitFor();
     await card.locator('[data-area-save]').click();
     await card.locator('[data-area-edit="south"]').waitFor();
     await card.locator('[data-nav="list"]').first().click();
@@ -340,16 +405,73 @@ async function main() {
       await el._loadBackendConfig();
     });
     await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-times"]').click();
     await card.locator('[data-settings-nav="settings-basic"]').click();
+    const basic = card.locator('[data-basic-field="catch_up_window_minutes"]');
+    const basicStatus = card.locator('[data-basic-save-status]');
+    const initialBasicWrites = await page.evaluate(() => window.__saved.filter(msg => msg.type === 'smart_shutter/save_basic_settings').length);
+    await basic.fill('12');
+    await basic.fill('');
+    await basicStatus.filter({hasText:'valid numbers'}).waitFor();
+    await page.waitForTimeout(750);
+    assert.equal(await page.evaluate(() => window.__saved.filter(msg => msg.type === 'smart_shutter/save_basic_settings').length), initialBasicWrites, 'Incomplete numeric input never saves');
+    await card.locator('[data-basic-field="manual_pause_minutes"]').fill('9');
+    await page.waitForFunction(() => window.__config.basic_settings.manual_pause_minutes === 9);
+    assert.equal(await basicStatus.textContent(), 'Enter complete, valid numbers. Changes are not saved yet.', 'A valid field saves while an incomplete field remains pending');
+    await card.locator('[data-settings-back]').click();
+    await card.locator('[data-settings-nav="settings-basic"]').click();
+    assert.equal(await basic.inputValue(), '', 'Incomplete draft survives internal navigation');
+    await basic.fill('15');
+    await basicStatus.filter({hasText:'Saved'}).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.basic_settings.catch_up_window_minutes), 15);
+    await page.evaluate(() => { window.__delayNextBasicSave = true; });
+    await basic.fill('16');
+    await page.waitForFunction(() => window.__basicSaveDelayEntered === true);
+    await basic.fill('17');
+    await page.waitForFunction(() => window.__config.basic_settings.catch_up_window_minutes === 17);
+    await basicStatus.filter({hasText:'Saved'}).waitFor();
+    assert.equal(await basic.inputValue(), '17', 'Late answer leaves the latest draft intact');
+    await page.evaluate(() => { window.__failNextBasicSave = true; });
+    await basic.fill('18');
+    await basicStatus.filter({hasText:'Temporary basic save failure'}).waitFor();
+    assert.equal(await card.locator('[data-retry-basic]').isVisible(), true);
+    await card.locator('[data-retry-basic]').click();
+    await basicStatus.filter({hasText:'Saved'}).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.basic_settings.catch_up_window_minutes), 18);
+    await card.locator('[data-settings-back]').click();
+    await card.locator('[data-settings-back]').click();
+    await card.locator('[data-settings-nav="settings-notifications"]').click();
     const globalPicker = card.locator('ha-service-picker');
     await globalPicker.evaluate(el => el.dispatchEvent(new CustomEvent('value-changed', {detail:{value:'notify.guest'}, bubbles:true, composed:true})));
-    await card.locator('[data-save-basic]').click();
-    await card.locator('[data-save-status]').filter({hasText:'Saved'}).waitFor();
+    await card.locator('[data-basic-save-status]').filter({hasText:'Saved'}).waitFor();
     assert.equal(await page.evaluate(() => window.__saved.at(-1).notify_service), 'notify.guest', 'Global save uses the native selection');
     await globalPicker.evaluate(el => el.dispatchEvent(new CustomEvent('value-changed', {detail:{value:undefined}, bubbles:true, composed:true})));
-    await card.locator('[data-save-basic]').click();
-    await card.locator('[data-save-status]').filter({hasText:'Saved'}).waitFor();
+    await card.locator('[data-basic-save-status]').filter({hasText:'Saved'}).waitFor();
     assert.equal(await page.evaluate(() => window.__saved.at(-1).notify_service), '', 'Global clear disables notifications');
+    await page.evaluate(() => {
+      for (const id of ['select.testroom_open_source', 'select.testroom_close_source', 'select.testroom_open_position_source', 'select.testroom_close_position_source']) {
+        window.__hass.states[id].state = 'local';
+      }
+      document.getElementById('card').hass = window.__hass;
+    });
+    await card.locator('[data-nav="list"]').click();
+    await card.locator('[data-open-detail="dev_testroom"]').click();
+    await card.locator('[data-tab="advanced"]').click();
+    const note = card.locator('[data-shutter-note="cover.testroom"]');
+    const noteStatus = card.locator('[data-note-save-status="cover.testroom"]');
+    await note.fill('Individual limit');
+    await card.locator('[data-nav="list"]').click();
+    await page.waitForFunction(() => window.__config.shutter_notes?.['cover.testroom'] === 'Individual limit');
+    await card.locator('[data-open-detail="dev_testroom"]').click();
+    await card.locator('[data-tab="advanced"]').click();
+    assert.equal(await note.inputValue(), 'Individual limit', 'Note survives navigation while autosave is pending');
+    await page.evaluate(() => { window.__failNextNoteSave = true; });
+    await note.fill('Reason revised');
+    await noteStatus.filter({hasText:'Temporary note save failure'}).waitFor();
+    assert.equal(await note.inputValue(), 'Reason revised');
+    await card.locator('[data-retry-note="cover.testroom"]').click();
+    await noteStatus.filter({hasText:'Saved'}).waitFor();
+    assert.equal(await page.evaluate(() => window.__config.shutter_notes['cover.testroom']), 'Reason revised');
     assert.deepEqual(await page.evaluate(() => window.__services), []);
     assert.deepEqual(errors, []);
     console.log("OK - English, guest area/shutter autosave, mobile fit, no real service calls");

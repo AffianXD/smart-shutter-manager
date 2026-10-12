@@ -122,7 +122,6 @@ async function main() {
 
     await view("settings-basic");
     await card.locator('[data-basic-field="seasonal_enabled"]').uncheck();
-    await card.locator("[data-save-basic]").click();
     await page.waitForFunction(() => window.__seasonEnabled === false);
     const saved = await page.evaluate(() => window.__calls.findLast((call) => call.type === "smart_shutter/save_basic_settings"));
     assert.equal(saved.seasonal_enabled, false);

@@ -51,7 +51,10 @@ async function main() {
               custom_areas: [area], shutter_areas: { [fx.coverEntityId]: ["guest"] },
               temporal_exceptions: window.__hass.user.is_admin ? [...window.__rules] : window.__rules.filter((r) => !r.cover_ids.length && r.area_ids.length === 1 && r.area_ids[0] === "guest"),
               expired_exception_limit: 10,
-              custom_schedules: [{ id: "custom_keep", name: "Existing recurring profile", weekdays: [0], interval_weeks: 2, reference_date: "2026-09-01", open_time: "09:00" }],
+              custom_schedules: [
+                { id: "custom_keep", name: "Existing recurring profile", weekdays: [0], interval_weeks: 2, reference_date: "2026-09-01", open_time: "09:00" },
+                { id: "area_keep", name: "Area recurring profile", area_id: "guest", weekdays: [1], interval_weeks: 1, reference_date: "2026-09-01", close_time: "20:00" },
+              ],
             };
           }
           if (msg.type === "smart_shutter/get_forecast") return { forecast: {} };
@@ -169,6 +172,8 @@ async function main() {
     console.log("OK - date rollover refreshes the list, retains only ten expired rules, and reactivates one");
     console.log("OK - dates, status, escaped names, validation, mode changes, failure/retry, conflicts, edit/delete, narrow form");
 
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-times"]').click();
     await card.locator('[data-settings-nav="settings-schedules"]').click();
     assert.equal(await card.locator("h2").textContent(), "Wiederkehrende Zeitprofile");
     assert.ok((await card.locator(".body").textContent()).includes("Existing recurring profile"));
@@ -202,6 +207,8 @@ async function main() {
       card._view = "settings";
       card._render();
     });
+    assert.deepEqual(await card.locator('.settings-menu > [data-settings-nav]').evaluateAll(items => items.map(el => el.dataset.settingsNav)),
+      ['settings-areas', 'settings-exceptions'], 'Restricted users retain only their area and exceptions');
     await card.locator('[data-settings-nav="settings-exceptions"]').click();
     const guestGlobalExceptions = card.locator('[data-toggle-area-section="detail-exceptions-global"]');
     assert.equal(await guestGlobalExceptions.count(), 0, "The guest Settings page also displays exceptions without an accordion");
@@ -226,6 +233,9 @@ async function main() {
     await card.locator('[data-settings-back]').click();
     await card.locator('[data-settings-nav="settings-areas"]').click();
     await card.locator('[data-area-edit="guest"]').click();
+    await card.locator('[data-schedule-edit="area_keep"]').click();
+    assert.equal(await card.locator(".settings-scope").textContent(), "Scope: recurring profile for Guest area");
+    await card.locator('[data-settings-back-schedules]').click();
     const areaExceptions = card.locator('.section-toggle[data-toggle-area-section="detail-exceptions-guest"]');
     assert.equal(await card.locator('[data-temporal-exception-section][data-temporal-area="guest"]').getAttribute("class"), null, "Area exceptions share the flat accordion style");
     assert.equal(await card.locator('[data-exception-edit="__new__"]').count(), 0, "Area exception actions also start inside the collapsed section");
@@ -238,7 +248,7 @@ async function main() {
     await card.locator('[data-area-save]').click();
     const areaStatus = card.locator('[data-save-status]');
     await areaStatus.filter({ hasText: "overlapping timed exceptions" }).waitFor();
-    assert.equal(await page.evaluate(() => window.__areaAssignmentWrites.length), 1,
+    assert.ok(await page.evaluate(() => window.__areaAssignmentWrites.length >= 1),
       "The area editor submits the changed membership before displaying the conflict");
     assert.deepEqual(await page.evaluate(() => window.__services), []);
     assert.deepEqual(errors, []);

@@ -88,6 +88,28 @@ async function main() {
     const ids = await page.evaluate(() => Object.keys(document.querySelector("home-assistant").hass.states).filter(id => id.startsWith("cover.")));
     assert.equal(ids.every(id => virtual.has(id)) && ids.length === 3, true);
     await card.locator('[data-nav="settings"]').click();
+    assert.deepEqual(await card.locator('.settings-menu > [data-settings-nav]').evaluateAll(items => items.map(el => el.dataset.settingsNav)),
+      ['settings-times', 'settings-areas', 'settings-shutters', 'settings-exceptions', 'settings-notifications', 'settings-shortcuts', 'settings-more']);
+    const setupHelpAlignment = await card.locator(".settings-help").evaluate(row => {
+      const label = row.querySelector("span").getBoundingClientRect();
+      const link = row.querySelector(".ssm-link-btn").getBoundingClientRect();
+      return Math.abs((label.top + label.height / 2) - (link.top + link.height / 2));
+    });
+    assert.ok(setupHelpAlignment < 1, "Setup help link is vertically aligned with its label");
+    await page.screenshot({ path: path.join(output, "settings-navigation-desktop.png"), fullPage: true });
+    await card.locator('[data-settings-nav="settings-times"]').click();
+    assert.equal(await card.locator('[data-settings-nav="settings-schedules"]').count(), 1);
+    await card.locator('[data-settings-nav="settings-basic"]').click();
+    assert.equal(await card.locator('[data-basic-field="seasonal_enabled"]').count(), 1);
+    assert.equal(await card.locator('[data-basic-field="notify_service"]').count(), 0);
+    await card.locator('[data-settings-back]').click();
+    assert.equal(await card.locator('[data-settings-nav="settings-schedules"]').count(), 1);
+    await card.locator('[data-settings-back]').click();
+    await card.locator('[data-settings-nav="settings-more"]').click();
+    await card.locator('[data-settings-nav="settings-more-basic"]').click();
+    assert.equal(await card.locator('[data-entity-picker="holiday_entity"]').count(), 1);
+    assert.equal(await card.locator('[data-basic-field="seasonal_enabled"]').count(), 0);
+    await card.locator('[data-nav="settings"]').click();
     await card.locator('[data-settings-nav="settings-shutters"]').click();
     await card.locator("[data-managed-cover]").first().waitFor();
     assert.equal(await card.locator("[data-managed-cover]").count(), 3);
@@ -97,7 +119,7 @@ async function main() {
     // Inspect the real Home Assistant service picker without changing a
     // notification setting or calling a service.
     await card.locator('[data-nav="settings"]').click();
-    await card.locator('[data-settings-nav="settings-basic"]').click();
+    await card.locator('[data-settings-nav="settings-notifications"]').click();
     const globalNotifyPicker = card.locator('[data-notify-picker] ha-service-picker').first();
     await globalNotifyPicker.waitFor();
     await assertNotifyPicker(globalNotifyPicker);
@@ -106,7 +128,18 @@ async function main() {
     await page.waitForTimeout(300);
     assert.equal(await card.locator(".body").evaluate(el => el.scrollWidth <= el.clientWidth), true);
     await page.screenshot({ path: path.join(output, "notify-picker-global-mobile.png"), fullPage: true });
+    await card.locator('[data-nav="settings"]').click();
+    assert.equal(await card.locator('.settings-menu > [data-settings-nav]').count(), 7);
+    await page.screenshot({ path: path.join(output, "settings-navigation-mobile.png"), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
+
+    await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-shortcuts"]').click();
+    await card.locator('[data-shortcut-edit="__new__"]').click();
+    assert.equal(await card.locator("[data-shortcut-save]").count(), 0,
+      "Shortcut editor relies on autosave without a manual save button");
+    await page.screenshot({ path: path.join(output, "shortcut-editor-desktop.png"), fullPage: true });
+    await card.locator("[data-shortcut-back]").click();
 
     await card.locator('[data-nav="settings"]').click();
     await card.locator('[data-settings-nav="settings-areas"]').click();
@@ -153,6 +186,7 @@ async function main() {
     await page.screenshot({ path: path.join(output, "exceptions-settings-desktop.png"), fullPage: true });
 
     await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-times"]').click();
     await card.locator('[data-settings-nav="settings-triggers"]').click();
     const externalTriggerInfo = card.locator("[data-info-toggle]").first();
     await assertInfoBesideHeading(externalTriggerInfo, "Externe Auslöser");
@@ -193,6 +227,7 @@ async function main() {
     await page.screenshot({ path: path.join(output, "shutter-exceptions-mobile.png"), fullPage: true });
 
     await card.locator('[data-nav="settings"]').click();
+    await card.locator('[data-settings-nav="settings-times"]').click();
     await card.locator('[data-settings-nav="settings-triggers"]').click();
     const mobileTriggerInfo = card.locator("[data-info-toggle]").first();
     await assertInfoBesideHeading(externalTriggerInfo, "Externe Auslöser");
@@ -244,7 +279,8 @@ async function main() {
     assert.deepEqual(blocked, [], "Baseline should not attempt writes or unknown requests");
     const report = { url: state.url, project: state.project, source_hash: state.source_hash,
       desktop: true, mobile: true, notification_picker_global: true, notification_picker_area: true,
-      notification_picker_shutter: true, global_exceptions_always_visible: true, shutter_exceptions_collapsed: true, errors, blocked };
+      notification_picker_shutter: true, global_exceptions_always_visible: true, shutter_exceptions_collapsed: true,
+      setup_help_alignment_px: setupHelpAlignment, manual_shortcut_save_button_absent: true, errors, blocked };
     fs.writeFileSync(path.join(output, "ui-result.json"), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report));
   } finally {

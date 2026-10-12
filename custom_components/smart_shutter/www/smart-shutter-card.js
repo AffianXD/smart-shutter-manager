@@ -340,7 +340,6 @@
       "Minutes": "Minuten",
       "Disable": "Ausschalten",
       "Destination": "Zielansicht",
-      "Save shortcut": "Shortcut speichern",
       "Overview": "Übersicht",
       "Area settings": "Bereichseinstellungen",
       "Basic settings": "Basis-Einstellungen",
@@ -418,6 +417,7 @@
       invalidInput: "Invalid input.",
       confirmDeleteProfile: "Delete this custom profile?",
       confirmDeleteTrigger: "Delete this external trigger?",
+      confirmDeleteShortcut: "Delete this dashboard shortcut?",
       confirmScheduleConflict: (names) => `Overlaps with: ${names}. Save this rule anyway so it takes priority over the listed rules?`,
       confirmApplyOverrides: (count, name, details) => `${count} ${count === 1 ? "shutter already has" : "shutters already have"} individual settings that "${name}" would override:\n\n${details}\n\nApply to ALL members anyway, including those settings?`,
       validationNoName: "Please enter a name.",
@@ -468,6 +468,7 @@
       invalidInput: "Ungültige Eingabe.",
       confirmDeleteProfile: "Dieses eigene Zeitprofil wirklich löschen?",
       confirmDeleteTrigger: "Diesen externen Auslöser wirklich löschen?",
+      confirmDeleteShortcut: "Diesen Dashboard-Kurzbefehl wirklich löschen?",
       confirmScheduleConflict: (names) => `Überschneidung mit: ${names}. Diese Regel trotzdem so speichern (gewinnt zukünftig gegenüber den genannten Regeln)?`,
       confirmApplyOverrides: (count, name, details) => `${count} ${count === 1 ? "Rollladen hat" : "Rollläden haben"} bereits individuelle Einstellungen für Felder, die "${name}" jetzt überschreiben würde:\n\n${details}\n\nTrotzdem auf ALLE Mitglieder anwenden (inkl. dieser individuellen Einstellungen)?`,
       validationNoName: "Bitte einen Namen vergeben.",
@@ -569,7 +570,16 @@
       this._globalTimelineSelectedIdx = null;
       this._globalTimelineGroups = [];
       this._editingAreaId = null;
+      this._areaDraft = null;
       this._editingShortcutId = null;
+      this._ruleSaveRevision = 0;
+      this._ruleSavedRevision = 0;
+      this._ruleSaveTimer = null;
+      this._ruleSaveInFlight = false;
+      this._ruleRunPromise = null;
+      this._ruleSaveError = false;
+      this._ruleDraftId = null;
+      this._ruleEditorGeneration = 0;
       this._sunAdvancedExpanded = false;
       this._areaSectionExpanded = {};
       this._sunDirectionOverride = undefined;
@@ -588,6 +598,8 @@
       this._onboardingAreaDraft = null;
       this._onboardingNewAreaId = null;
       this._onboardingNewAreaMembers = new Set();
+      this._basicSave = { draft: {}, revision: 0, savedRevision: 0, timer: null, saving: false, status: "" };
+      this._noteSaves = new Map();
       this._dashboardPreviewScrollPending = false;
       this._lastTemporalDate = null;
       this._loaded = false;
@@ -625,9 +637,19 @@
       this._subscribeSeasonRegistry();
       this._startTemporalDateCheck();
       this._installInfoPopoverListeners();
+      this._pendingSettingsUnload = (event) => {
+        if (this._basicSave.revision > this._basicSave.savedRevision ||
+            [...this._noteSaves.values()].some((state) => state.revision > state.savedRevision)) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      };
+      window.addEventListener("beforeunload", this._pendingSettingsUnload);
     }
 
     disconnectedCallback() {
+      window.removeEventListener("beforeunload", this._pendingSettingsUnload);
+      clearTimeout(this._ruleSaveTimer);
       if (this._temporalDateCheckInterval !== null) {
         clearInterval(this._temporalDateCheckInterval);
         this._temporalDateCheckInterval = null;
@@ -1507,6 +1529,9 @@
         if (ev.target.matches("[data-exception-form]")) { ev.preventDefault(); this._saveException(); }
       });
       this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
+      this.shadowRoot.addEventListener("value-changed", (ev) => {
+        if (this._ruleEditorKind(ev.target)) this._queueRuleSave(700);
+      });
       this.shadowRoot.addEventListener("dragstart", (ev) => this._onDragStart(ev));
       this.shadowRoot.addEventListener("dragover", (ev) => this._onDragOver(ev));
       this.shadowRoot.addEventListener("drop", (ev) => this._onDrop(ev));
@@ -1886,6 +1911,8 @@
         }
         .settings-menu-item .name { font-weight: 600; font-size: 0.95em; }
         .settings-menu-item .meta { font-size: 0.78em; color: var(--ssm-muted); }
+        .settings-scope { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--secondary-background-color, #f3f5f7); color: var(--secondary-text-color, #555); font-size: 0.85em; }
+        .settings-help { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--secondary-text-color, #555); font-size: 0.9em; }
         .onboarding { display: grid; gap: 14px; max-width: 720px; margin: 0 auto; }
         .onboarding > * { min-width: 0; }
         .onboarding-hero {
@@ -2007,6 +2034,9 @@
         .list-item .main { flex: 1; }
         .list-item .name { font-weight: 600; }
         .list-item .meta { font-size: 0.8em; color: var(--ssm-muted); margin-top: 1px; }
+        .individual-settings-summary .list-item { flex-wrap: wrap; }
+        .individual-settings-summary .list-item .main { min-width: 160px; }
+        .individual-settings-summary .link-btn { margin: 0; text-align: left; }
         .list-item .actions { display: flex; gap: 4px; }
         .list-item .actions button {
           border: 1px solid var(--ssm-border); background: var(--ssm-card-bg); cursor: pointer; color: var(--primary-text-color);
@@ -2166,10 +2196,21 @@
           display: inline-block; margin-top: 14px; background: none; border: none; cursor: pointer;
           color: var(--primary-color); font-size: 0.85em; font-weight: 600; padding: 4px 0; font-family: inherit;
         }
+        .settings-help .ssm-link-btn { margin-top: 0; }
       `;
     }
 
-    _onClick(ev) {
+    async _onClick(ev) {
+      const leavingRule = ev.target.closest("[data-nav], [data-exception-back], [data-settings-back-schedules], [data-settings-back-triggers], [data-shortcut-back]");
+      const editorKind = {
+        "settings-exception-edit": "exception", "settings-schedule-edit": "schedule",
+        "settings-trigger-edit": "trigger", "settings-shortcut-edit": "shortcut",
+      }[this._view];
+      const autosaveKind = editorKind === "schedule" && this._editReturnAreaId ? null : editorKind;
+      if (leavingRule && autosaveKind && this._ruleSavedRevision !== this._ruleSaveRevision && this._ruleDraftComplete(autosaveKind)) {
+        ev.preventDefault();
+        if (!await this._flushRuleSave(autosaveKind)) return;
+      }
       const onboardingNextBtn = ev.target.closest("[data-onboarding-next]");
       if (onboardingNextBtn) {
         if (this._onboardingSavingCount || Object.keys(this._onboardingSaveErrors).length) return;
@@ -2274,6 +2315,11 @@
       }
       const exceptionEdit = ev.target.closest("[data-exception-edit]");
       if (exceptionEdit) {
+        clearTimeout(this._ruleSaveTimer);
+        this._ruleSavedRevision = this._ruleSaveRevision;
+        this._ruleEditorGeneration += 1;
+        this._ruleDraftId = null;
+        this._ruleDraftSignature = null;
         this._exceptionReturnView = this._view;
         const id = exceptionEdit.getAttribute("data-exception-edit");
         this._editingExceptionId = id === "__new__" ? null : id;
@@ -2292,7 +2338,15 @@
         return;
       }
       if (ev.target.closest("[data-save-exception]")) {
+        clearTimeout(this._ruleSaveTimer);
         this._saveException();
+        return;
+      }
+      if (ev.target.closest("[data-rule-retry]")) {
+        const kind = { "settings-exception-edit": "exception", "settings-schedule-edit": "schedule",
+          "settings-trigger-edit": "trigger", "settings-shortcut-edit": "shortcut" }[this._view];
+        if (kind === "schedule" && this._ruleConflict) this._saveSchedule();
+        else if (kind) this._runRuleSave(kind);
         return;
       }
       const exceptionDelete = ev.target.closest("[data-exception-delete]");
@@ -2342,6 +2396,17 @@
         this._render();
         return;
       }
+      const overrideDetailBtn = ev.target.closest("[data-override-detail]");
+      if (overrideDetailBtn) {
+        const s = this._shutterByDeviceId(overrideDetailBtn.getAttribute("data-override-detail"));
+        if (s) {
+          this._detailDeviceId = s.deviceId;
+          this._detailTab = overrideDetailBtn.getAttribute("data-override-tab") || "basic";
+          this._view = "detail";
+          this._render();
+        }
+        return;
+      }
       const shortcutBtn = ev.target.closest("[data-custom-shortcut]");
       if (shortcutBtn) {
         this._runHomeShortcut(shortcutBtn.getAttribute("data-custom-shortcut"));
@@ -2349,6 +2414,11 @@
       }
       const shortcutEditBtn = ev.target.closest("[data-shortcut-edit]");
       if (shortcutEditBtn) {
+        clearTimeout(this._ruleSaveTimer);
+        this._ruleSavedRevision = this._ruleSaveRevision;
+        this._ruleEditorGeneration += 1;
+        this._ruleDraftId = null;
+        this._ruleDraftSignature = null;
         this._editingShortcutId = shortcutEditBtn.getAttribute("data-shortcut-edit") === "__new__"
           ? null
           : shortcutEditBtn.getAttribute("data-shortcut-edit");
@@ -2356,13 +2426,9 @@
         this._render();
         return;
       }
-      const shortcutSaveBtn = ev.target.closest("[data-shortcut-save]");
-      if (shortcutSaveBtn) {
-        this._collectAndSaveShortcut();
-        return;
-      }
       const shortcutDeleteBtn = ev.target.closest("[data-shortcut-delete]");
       if (shortcutDeleteBtn) {
+        if (!window.confirm(this._message("confirmDeleteShortcut"))) return;
         const id = shortcutDeleteBtn.getAttribute("data-shortcut-delete");
         const shortcuts = (this._backendConfig.shortcuts || []).filter((item) => item.id !== id);
         this._saveHomeShortcuts(shortcuts);
@@ -2395,21 +2461,19 @@
           this._view = this._onboardingReturnView;
           this._onboardingReturnView = null;
         } else {
-          this._view = "settings";
+          this._view = ["settings-global", "settings-schedules", "settings-triggers", "settings-basic"].includes(this._view)
+            ? "settings-times" : this._view === "settings-more-basic" ? "settings-more" : "settings";
         }
         this._render();
         return;
       }
-      const saveBasicBtn = ev.target.closest("[data-save-basic]");
-      if (saveBasicBtn) {
-        this._saveBasicSettings();
+      if (ev.target.closest("[data-retry-basic]")) {
+        this._scheduleBasicSave(0);
         return;
       }
-      const saveShutterNoteBtn = ev.target.closest("[data-save-shutter-note]");
-      if (saveShutterNoteBtn) {
-        const coverEntityId = saveShutterNoteBtn.getAttribute("data-save-shutter-note");
-        const textarea = this.shadowRoot.querySelector(`[data-shutter-note="${coverEntityId}"]`);
-        this._saveShutterNote(coverEntityId, textarea ? textarea.value : "");
+      const retryNote = ev.target.closest("[data-retry-note]");
+      if (retryNote) {
+        this._scheduleShutterNoteSave(retryNote.getAttribute("data-retry-note"), 0);
         return;
       }
       const settingsBackSchedulesBtn = ev.target.closest("[data-settings-back-schedules]");
@@ -2423,6 +2487,13 @@
 
       const settingsBackAreasBtn = ev.target.closest("[data-settings-back-areas]");
       if (settingsBackAreasBtn) {
+        const state = this._areaDraft;
+        if (this._editingAreaId && state && (state.saving || state.timer || state.revision > state.savedRevision)) {
+          this._captureAreaDraft();
+          state.navigateOnSave = true;
+          this._queueAreaSave(0);
+          return;
+        }
         this._haptic("selection");
         this._editingAreaId = null;
         this._view = "settings-areas";
@@ -2446,6 +2517,7 @@
       }
       const toggleSunAdvancedBtn = ev.target.closest("[data-toggle-sun-advanced]");
       if (toggleSunAdvancedBtn) {
+        if (this._view === "settings-area-edit") this._captureAreaDraft();
         this._haptic("selection");
         this._sunAdvancedExpanded = !this._sunAdvancedExpanded;
         this._render();
@@ -2453,6 +2525,7 @@
       }
       const toggleAreaSectionBtn = ev.target.closest("[data-toggle-area-section]");
       if (toggleAreaSectionBtn) {
+        if (this._view === "settings-area-edit") this._captureAreaDraft();
         this._haptic("selection");
         const key = toggleAreaSectionBtn.getAttribute("data-toggle-area-section");
         this._areaSectionExpanded[key] = !this._areaSectionExpanded[key];
@@ -2464,6 +2537,7 @@
         this._haptic("selection");
         const id = areaEditBtn.getAttribute("data-area-edit");
         this._editingAreaId = id === "__new__" ? null : id;
+        this._areaDraft = null;
         this._sunAdvancedExpanded = false;
         this._areaSectionExpanded = {};
         this._sunDirectionOverride = undefined;
@@ -2475,6 +2549,7 @@
       if (areaDeleteBtn) {
         this._haptic("warning");
         const id = areaDeleteBtn.getAttribute("data-area-delete");
+        if (!window.confirm(this._exceptionText("Bereich wirklich löschen?", "Delete this area?"))) return;
         const areas = ((this._backendConfig && this._backendConfig.custom_areas) || []).filter((a) => a.id !== id);
         this._saveAreas(areas);
         return;
@@ -2488,15 +2563,22 @@
       const areaSaveBtn = ev.target.closest("[data-area-save]");
       if (areaSaveBtn) {
         this._haptic("selection");
-        this._collectAndSaveArea().catch((err) => {
-          const status = this.shadowRoot.querySelector("[data-save-status]");
-          if (status) status.textContent = this._message("errorPrefix") + (err.message || String(err));
-          this._haptic("failure");
-        });
+        this._captureAreaDraft();
+        this._areaDraft.navigateOnSave = true;
+        this._queueAreaSave(0);
+        return;
+      }
+      if (ev.target.closest("[data-area-retry]")) {
+        this._queueAreaSave(0);
         return;
       }
       const scheduleEditBtn = ev.target.closest("[data-schedule-edit]");
       if (scheduleEditBtn) {
+        clearTimeout(this._ruleSaveTimer);
+        this._ruleSavedRevision = this._ruleSaveRevision;
+        this._ruleEditorGeneration += 1;
+        this._ruleDraftId = null;
+        this._ruleDraftSignature = null;
         this._haptic("selection");
         const id = scheduleEditBtn.getAttribute("data-schedule-edit");
         this._editingScheduleId = id === "__new__" ? null : id;
@@ -2525,6 +2607,7 @@
       }
       const saveScheduleBtn = ev.target.closest("[data-save-schedule]");
       if (saveScheduleBtn) {
+        clearTimeout(this._ruleSaveTimer);
         this._saveSchedule();
         return;
       }
@@ -2538,6 +2621,11 @@
       }
       const triggerEditBtn = ev.target.closest("[data-trigger-edit]");
       if (triggerEditBtn) {
+        clearTimeout(this._ruleSaveTimer);
+        this._ruleSavedRevision = this._ruleSaveRevision;
+        this._ruleEditorGeneration += 1;
+        this._ruleDraftId = null;
+        this._ruleDraftSignature = null;
         this._haptic("selection");
         const id = triggerEditBtn.getAttribute("data-trigger-edit");
         this._editingTriggerId = id === "__new__" ? null : id;
@@ -2561,6 +2649,7 @@
       }
       const saveTriggerBtn = ev.target.closest("[data-save-trigger]");
       if (saveTriggerBtn) {
+        clearTimeout(this._ruleSaveTimer);
         this._saveTrigger();
         return;
       }
@@ -2755,12 +2844,198 @@
       }
     }
 
-    _onChange(ev) {
-      const exceptionForm = ev.target.closest("[data-exception-form]");
-      if (exceptionForm && ev.target.matches("[data-exception-field], [data-exception-action], [data-exception-target]")) {
-        const status = exceptionForm.querySelector("[data-exception-status-message]");
-        if (status) status.textContent = "";
+    _ruleEditorKind(target) {
+      const views = {
+        "settings-exception-edit": "exception",
+        "settings-schedule-edit": "schedule",
+        "settings-trigger-edit": "trigger",
+        "settings-shortcut-edit": "shortcut",
+      };
+      const kind = views[this._view];
+      if (!kind) return null;
+      if (kind === "schedule" && this._editReturnAreaId) return null;
+      const selector = {
+        exception: "[data-exception-field], [data-exception-action], [data-exception-target]",
+        schedule: "[data-schedule-field], [data-schedule-weekday]",
+        trigger: "[data-trigger-field], [data-trigger-target-mode], [data-entity-picker][data-picker-attr='data-trigger-field']",
+        shortcut: "[data-shortcut-field]",
+      }[kind];
+      return target.closest(selector) ? kind : null;
+    }
+
+    _readRuleFields(kind) {
+      const prefix = `data-${kind}-field`;
+      const values = {};
+      this.shadowRoot.querySelectorAll(`[${prefix}]`).forEach((el) => {
+        values[el.getAttribute(prefix)] = el.value;
+      });
+      return values;
+    }
+
+    _restoreRuleFields(kind, values) {
+      const prefix = `data-${kind}-field`;
+      this.shadowRoot.querySelectorAll(`[${prefix}]`).forEach((el) => {
+        const key = el.getAttribute(prefix);
+        if (Object.hasOwn(values, key)) el.value = values[key];
+      });
+    }
+
+    _newRuleId(prefix) {
+      if (!this._ruleDraftId) {
+        const cryptoApi = globalThis.crypto;
+        let suffix;
+        if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+          suffix = cryptoApi.randomUUID().replace(/-/g, "").slice(0, 12);
+        } else if (cryptoApi && typeof cryptoApi.getRandomValues === "function") {
+          const bytes = new Uint8Array(8);
+          cryptoApi.getRandomValues(bytes);
+          suffix = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 12);
+        } else {
+          suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`.slice(0, 12);
+        }
+        this._ruleDraftId = `${prefix}${suffix}`;
       }
+      return this._ruleDraftId;
+    }
+
+    _ruleDraftComplete(kind) {
+      const body = this.shadowRoot.querySelector(".body");
+      const value = (selector) => {
+        const field = body.querySelector(selector);
+        return field ? (typeof field.value === "string" ? field.value : field.getAttribute("value") || "") : "";
+      };
+      if (kind === "exception") {
+        const form = body.querySelector("[data-exception-form]");
+        if (!form || !form.checkValidity()) return false;
+        const mode = value('[data-exception-field="mode"]');
+        const start = value('[data-exception-field="start_date"]');
+        const end = value('[data-exception-field="end_date"]');
+        return !!(start && end && start <= end && form.querySelector("[data-exception-target]:checked") &&
+          (mode === "pause" ? form.querySelector("[data-exception-action]:checked") :
+            value('[data-exception-field="open_time"]') || value('[data-exception-field="close_time"]')));
+      }
+      if (kind === "schedule") {
+        const interval = body.querySelector('[data-schedule-field="interval_weeks"]');
+        const reference = value('[data-schedule-field="reference_date"]');
+        const end = value('[data-schedule-field="end_date"]');
+        return !!(value('[data-schedule-field="name"]').trim() && body.querySelector("[data-schedule-weekday]:checked") &&
+          (value('[data-schedule-field="open_time"]') || value('[data-schedule-field="close_time"]')) &&
+          interval && interval.checkValidity() && reference && (!end || end >= reference));
+      }
+      if (kind === "trigger") {
+        const areaMode = value("[data-trigger-target-mode]") === "area";
+        const slot = body.querySelector('[data-entity-picker="entity_id"][data-picker-attr="data-trigger-field"]');
+        return !!(value('[data-trigger-field="name"]').trim() && (areaMode ?
+          value('[data-trigger-field="area_id"]') : (slot && slot.getAttribute("data-value"))));
+      }
+      if (kind === "shortcut") {
+        const kindValue = value('[data-shortcut-field="kind"]');
+        const icon = value('[data-shortcut-field="icon"]').trim();
+        const target = value('[data-shortcut-field="target"]');
+        const minutes = body.querySelector('[data-shortcut-field="minutes"]');
+        return !!(value('[data-shortcut-field="name"]').trim() && /^mdi:[a-z0-9-]+$/.test(icon) &&
+          (kindValue === "navigate" ? value('[data-shortcut-field="view"]') :
+            target && value('[data-shortcut-field="action"]') &&
+            (kindValue !== "postpone" || (minutes && minutes.checkValidity() && minutes.value))));
+      }
+      return false;
+    }
+
+    _queueRuleSave(delay = 700) {
+      const kind = this._ruleEditorKind(this.shadowRoot.activeElement || this.shadowRoot.querySelector(".body"));
+      const currentKind = kind || {
+        "settings-exception-edit": "exception", "settings-schedule-edit": this._editReturnAreaId ? null : "schedule",
+        "settings-trigger-edit": "trigger", "settings-shortcut-edit": "shortcut",
+      }[this._view];
+      if (!currentKind) return;
+      const fields = this.shadowRoot.querySelectorAll({
+        exception: "[data-exception-field], [data-exception-action], [data-exception-target]",
+        schedule: "[data-schedule-field], [data-schedule-weekday]",
+        trigger: "[data-trigger-field], [data-trigger-target-mode], [data-entity-picker][data-picker-attr='data-trigger-field']",
+        shortcut: "[data-shortcut-field]",
+      }[currentKind]);
+      const signature = JSON.stringify([...fields].map((el) => [
+        el.getAttribute("data-exception-field") || el.getAttribute("data-schedule-field") ||
+          el.getAttribute("data-schedule-weekday") || el.getAttribute("data-trigger-field") ||
+          el.getAttribute("data-trigger-target-mode") || el.getAttribute("data-entity-picker") ||
+          el.getAttribute("data-shortcut-field"),
+        el.getAttribute("data-value") || (typeof el.value === "string" ? el.value : el.getAttribute("value") || ""),
+        !!el.checked,
+      ]));
+      if (signature === this._ruleDraftSignature) return;
+      this._ruleDraftSignature = signature;
+      clearTimeout(this._ruleSaveTimer);
+      this._ruleSaveRevision += 1;
+      this._ruleSaveError = false;
+      this._ruleConflict = false;
+      const retry = this.shadowRoot.querySelector("[data-rule-retry]");
+      if (retry) retry.hidden = true;
+      const status = this.shadowRoot.querySelector(currentKind === "exception" ? "[data-exception-status-message]" :
+        currentKind === "shortcut" ? "[data-shortcut-status]" : "[data-save-status]");
+      if (!this._ruleDraftComplete(currentKind)) {
+        this._ruleSaveTimer = null;
+        if (status) status.textContent = this._language() === "de" ? "Entwurf: Pflichtfelder vervollständigen." : "Draft: complete required fields.";
+        return;
+      }
+      if (status) status.textContent = this._language() === "de" ? "Änderungen werden gespeichert …" : "Changes will be saved …";
+      this._ruleSaveTimer = setTimeout(() => {
+        this._ruleSaveTimer = null;
+        this._runRuleSave(currentKind);
+      }, delay);
+    }
+
+    async _flushRuleSave(kind) {
+      clearTimeout(this._ruleSaveTimer);
+      this._ruleSaveTimer = null;
+      while (this._ruleSavedRevision !== this._ruleSaveRevision) {
+        if (!await this._runRuleSave(kind)) return false;
+        clearTimeout(this._ruleSaveTimer);
+        this._ruleSaveTimer = null;
+      }
+      return true;
+    }
+
+    _runRuleSave(kind) {
+      if (this._ruleRunPromise) return this._ruleRunPromise;
+      this._ruleRunPromise = this._performRuleSave(kind).finally(() => { this._ruleRunPromise = null; });
+      return this._ruleRunPromise;
+    }
+
+    async _performRuleSave(kind) {
+      if (!this._ruleDraftComplete(kind)) return;
+      const revision = this._ruleSaveRevision;
+      this._ruleSaveInFlight = true;
+      let saved = false;
+      try {
+        if (kind === "exception") saved = await this._saveException(true);
+        else if (kind === "schedule") saved = await this._saveSchedule(true);
+        else if (kind === "trigger") saved = await this._saveTrigger(true);
+        else saved = await this._collectAndSaveShortcut(true);
+      } finally {
+        this._ruleSaveInFlight = false;
+        if (saved) this._ruleSavedRevision = revision;
+        if (saved && this._ruleSaveRevision !== revision && this._view === `settings-${kind}-edit`) {
+          this._ruleSaveTimer = setTimeout(() => this._runRuleSave(kind), 650);
+        } else if (!saved) {
+          this._ruleSaveError = true;
+          const retry = this.shadowRoot.querySelector("[data-rule-retry]");
+          if (retry) retry.hidden = false;
+        }
+      }
+      return saved;
+    }
+
+    _onChange(ev) {
+      const basic = ev.target.closest("[data-basic-field]");
+      if (basic && ["settings-basic", "settings-notifications", "settings-more-basic"].includes(this._view)) {
+        this._queueBasicField(basic.getAttribute("data-basic-field"), basic.type === "checkbox" ? basic.checked : basic.value);
+        return;
+      }
+      if (this._view === "settings-area-edit" && ev.target.matches("[data-area-field], [data-area-user], [data-area-member]")) {
+        this._captureAreaDraft();
+        if (this._editingAreaId) this._queueAreaSave(0);
+      }
+      if (this._ruleEditorKind(ev.target)) this._queueRuleSave(650);
       const shortcutKind = ev.target.closest('[data-shortcut-field="kind"]');
       if (shortcutKind) {
         this._syncShortcutEditorFields();
@@ -2835,15 +3110,32 @@
       const triggerTargetModeSel = ev.target.closest("select[data-trigger-target-mode]");
       if (triggerTargetModeSel) {
         this._haptic("selection");
+        const draft = this._readRuleFields("trigger");
         this._triggerTargetMode = triggerTargetModeSel.value;
         this._render();
+        this._restoreRuleFields("trigger", draft);
+        this._queueRuleSave(650);
         return;
       }
       const sunDirSel = ev.target.closest("select[data-sun-direction-select]");
       if (sunDirSel) {
         this._haptic("selection");
+        if (this._view === "settings-area-edit") {
+          this._captureAreaDraft();
+        }
         this._sunDirectionOverride = sunDirSel.value;
+        if (this._areaDraft && this._view === "settings-area-edit") {
+          const preset = COMPASS_PRESETS[this._sunDirectionOverride];
+          if (preset) {
+            const changed = this._areaDraft.fields.sun_azimuth_from !== preset[0] ||
+              this._areaDraft.fields.sun_azimuth_to !== preset[1];
+            this._areaDraft.fields.sun_azimuth_from = preset[0];
+            this._areaDraft.fields.sun_azimuth_to = preset[1];
+            if (changed) this._areaDraft.revision += 1;
+          }
+        }
         this._render();
+        if (this._view === "settings-area-edit" && this._editingAreaId) this._queueAreaSave(650);
         return;
       }
       const modeSel = ev.target.closest("select[data-advanced-mode-select]");
@@ -2929,17 +3221,27 @@
     }
 
     _onInput(ev) {
+      const basic = ev.target.closest("[data-basic-field]");
+      if (basic && ["settings-basic", "settings-notifications", "settings-more-basic"].includes(this._view)) {
+        this._queueBasicField(basic.getAttribute("data-basic-field"), basic.value);
+        return;
+      }
+      const note = ev.target.closest("[data-shutter-note]");
+      if (note) {
+        this._queueShutterNote(note.getAttribute("data-shutter-note"), note.value, 650);
+        return;
+      }
+      if (this._view === "settings-area-edit" && ev.target.matches("[data-area-field]")) {
+        this._captureAreaDraft();
+        if (this._editingAreaId) this._queueAreaSave(650);
+      }
+      if (this._ruleEditorKind(ev.target)) this._queueRuleSave(700);
       const preNotifyMinutes = ev.target.closest("[data-pre-notify-minutes]");
       if (preNotifyMinutes) {
         const form = preNotifyMinutes.closest("[data-notification-settings]");
         if (this._notificationDraftIsSavable(this._notificationDraft(form))) this._queueNotificationSave(form, 650);
         else this._cancelNotificationSave(form);
         return;
-      }
-      const exceptionForm = ev.target.closest("[data-exception-form]");
-      if (exceptionForm && ev.target.matches("[data-exception-field], [data-exception-action], [data-exception-target]")) {
-        const status = exceptionForm.querySelector("[data-exception-status-message]");
-        if (status) status.textContent = "";
       }
       const notificationRecipient = ev.target.closest("[data-notification-recipient]");
       if (notificationRecipient) {
@@ -3045,6 +3347,13 @@
         const shutter = this._shutterByDeviceId(el.getAttribute("data-shutter-name"));
         if (shutter) el.textContent = shutter.name;
       });
+      const individualSummary = body.querySelector("[data-individual-settings-summary]");
+      if (individualSummary && this._model) {
+        const rows = this._individualSettingsSummary();
+        if (this._individualSettingsSignature(rows) !== this._individualSummarySignature) {
+          individualSummary.innerHTML = this._renderIndividualSettingsSummary(rows);
+        }
+      }
       this._syncControlValues(body);
       this._mountEntityPickers(body);
       this._mountNotificationPickers(body);
@@ -3122,7 +3431,15 @@
       } else if (this._view === "settings-global") {
         body.innerHTML = this._renderSettingsGlobal();
       } else if (this._view === "settings-basic") {
-        body.innerHTML = this._renderSettingsBasic();
+        body.innerHTML = this._renderSettingsBasic("automation");
+      } else if (this._view === "settings-notifications") {
+        body.innerHTML = this._renderSettingsBasic("notifications");
+      } else if (this._view === "settings-more-basic") {
+        body.innerHTML = this._renderSettingsBasic("sensors");
+      } else if (this._view === "settings-times") {
+        body.innerHTML = this._renderSettingsTimes();
+      } else if (this._view === "settings-more") {
+        body.innerHTML = this._renderSettingsMore();
       } else if (this._view === "settings-schedules") {
         body.innerHTML = this._renderSettingsSchedules();
       } else if (this._view === "settings-exceptions") {
@@ -3147,11 +3464,17 @@
         body.innerHTML = this._renderHomeShortcutEdit();
       }
 
+      if (isSettingsSubview) {
+        const scope = this._settingsScope();
+        if (scope) body.insertAdjacentHTML("afterbegin", `<p class="settings-scope">${scope}</p>`);
+      }
+
       this._positionInfoControls(body);
       // Sets current values in form controls (no re-render on every key press)
       this._syncControlValues(body);
       this._mountEntityPickers(body);
       this._mountNotificationPickers(body);
+      if (this._view === "settings-area-edit" && this._areaDraft) this._restoreAreaDraft();
       this._syncShortcutEditorFields();
       this._localizeDom();
     }
@@ -4785,15 +5108,17 @@
         // own reminder, secondly in the confirmation dialog from
         // "Apply to members" displayed before an individual
         // Setting is accidentally overwritten.
-        const existingNote = (this._backendConfig && this._backendConfig.shutter_notes &&
+        const savedNote = (this._backendConfig && this._backendConfig.shutter_notes &&
           this._backendConfig.shutter_notes[s.coverEntityId]) || "";
+        const noteState = this._noteSaves.get(s.coverEntityId);
+        const existingNote = noteState && noteState.revision > noteState.savedRevision ? noteState.draft : savedNote;
         html += `
           <div class="form-field">
             <label>Note (why individual settings?)</label>
-            <textarea data-shutter-note="${s.coverEntityId}" placeholder="z.B. Blumentopf auf der Fensterbank, nicht unter 20% schließen">${existingNote}</textarea>
+            <textarea data-shutter-note="${s.coverEntityId}" placeholder="z.B. Blumentopf auf der Fensterbank, nicht unter 20% schließen">${this._escapeHtml(existingNote)}</textarea>
           </div>
-          <button data-save-shutter-note="${s.coverEntityId}">Save note</button>
-          <span class="save-status" data-save-status></span>
+          <span class="save-status" data-note-save-status="${s.coverEntityId}" role="status" aria-live="polite">${this._escapeHtml(noteState?.status || "")}</span>
+          <button type="button" data-retry-note="${s.coverEntityId}" ${noteState?.error ? "" : "hidden"}>${this._language() === "de" ? "Erneut versuchen" : "Retry"}</button>
         `;
       }
 
@@ -4914,8 +5239,7 @@
           <option value="settings-global" ${selected("view", "settings-global", "overview")}>Global settings</option>
           <option value="settings-shutters" ${selected("view", "settings-shutters", "overview")}>Manage shutters</option>
         </select></div>
-        <button class="save-btn" data-shortcut-save><ha-icon icon="mdi:content-save"></ha-icon> Save shortcut</button>
-        <span class="save-status" data-shortcut-status></span>
+        <span class="save-status" data-shortcut-status role="status" aria-live="polite"></span><button type="button" data-rule-retry hidden>${this._language() === "de" ? "Erneut versuchen" : "Retry"}</button>
       `;
     }
 
@@ -4935,15 +5259,17 @@
       });
     }
 
-    async _collectAndSaveShortcut() {
+    async _collectAndSaveShortcut(autosave = false) {
+      if (!autosave && this._ruleSaveInFlight) return false;
+      const generation = this._ruleEditorGeneration;
       const body = this.shadowRoot.querySelector(".body");
       const read = (key) => {
         const field = body.querySelector(`[data-shortcut-field="${key}"]`);
-        return field ? field.value : "";
+        return field ? (typeof field.value === "string" ? field.value : field.getAttribute("value") || "") : "";
       };
       const kind = read("kind");
       const shortcut = {
-        id: this._editingShortcutId || `shortcut-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        id: this._editingShortcutId || this._newRuleId("shortcut-"),
         name: read("name").trim(),
         icon: read("icon").trim(),
         kind,
@@ -4960,10 +5286,12 @@
       const index = current.findIndex((item) => item.id === shortcut.id);
       if (index >= 0) current[index] = shortcut;
       else current.push(shortcut);
-      await this._saveHomeShortcuts(current, "settings-shortcuts");
+      const saved = await this._saveHomeShortcuts(current, "settings-shortcuts", autosave);
+      if (saved && autosave && generation === this._ruleEditorGeneration) this._editingShortcutId = shortcut.id;
+      return saved;
     }
 
-    async _saveHomeShortcuts(shortcuts, successView = "settings-shortcuts") {
+    async _saveHomeShortcuts(shortcuts, successView = "settings-shortcuts", autosave = false) {
       const status = this.shadowRoot.querySelector("[data-shortcut-status]");
       try {
         const result = await this._hass.callWS({
@@ -4973,15 +5301,21 @@
         });
         if (!result.success) {
           if (status) status.textContent = this._message("invalidShortcut");
-          return;
+          return false;
         }
         await this._loadBackendConfig();
+        if (autosave) {
+          if (status) status.textContent = this._language() === "de" ? "Gespeichert." : "Saved.";
+          return true;
+        }
         this._editingShortcutId = null;
         this._view = successView;
         this._haptic("success");
         this._render();
+        return true;
       } catch (err) {
         if (status) status.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        return false;
       }
     }
 
@@ -5026,6 +5360,10 @@
       const backendError = this._backendError
         ? `<div class="hint error">${this._backendError}</div>`
         : "";
+      const de = this._language() === "de";
+      const item = (view, icon, name, description) => `<button class="settings-menu-item" data-settings-nav="${view}">
+        <ha-icon icon="${icon}"></ha-icon><div><div class="name">${name}</div><div class="meta">${description}</div></div>
+      </button>`;
       if (this._isRestricted()) {
         // Guest (v0.18): all other menu items are host/device-wide
         // Configuration (Basic Settings, Custom Profiles, External
@@ -5033,59 +5371,66 @@
         // or admin-only on the backend side (see websocket_api.py),
         // therefore not displayed at all instead of being empty/confusing
         // Subpages.
-        return `
-          <h2>Settings</h2>
+        return `<h2>${de ? "Einstellungen" : "Settings"}</h2>
           ${backendError}
           <div class="settings-menu">
-            <button class="settings-menu-item" data-settings-nav="settings-areas">
-              <ha-icon icon="mdi:compass-outline"></ha-icon>
-              <div><div class="name">My Area</div><div class="meta">Times, Sun Position Rule, Frost Protection for your area</div></div>
-            </button>
-            <button class="settings-menu-item" data-settings-nav="settings-exceptions">
-              <ha-icon icon="mdi:calendar-range"></ha-icon><div class="name">${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</div>
-            </button>
-          </div>
-        `;
+            ${item("settings-areas", "mdi:compass-outline", de ? "Mein Bereich" : "My area", de ? "Fahrzeiten, Sonnenstand und Frostschutz im eigenen Bereich" : "Times, sun position and frost protection for your area")}
+            ${item("settings-exceptions", "mdi:calendar-range", de ? "Ausnahmen" : "Exceptions", de ? "Einmalige Ausnahmen für einen Zeitraum" : "One-time exceptions for a date range")}
+          </div>`;
       }
-      return `
-        <h2>Settings</h2>
+      return `<h2>${de ? "Einstellungen" : "Settings"}</h2>
         ${backendError}
         <div class="settings-menu">
-          ${this._isAdmin() ? `<button class="settings-menu-item" data-settings-nav="onboarding">
-            <ha-icon icon="mdi:clipboard-check-outline"></ha-icon>
-            <div><div class="name">${this._language() === "de" ? "Einrichtungsleitfaden" : "Setup guide"}</div><div class="meta">${this._language() === "de" ? "Zeitplan und Automatik jederzeit prüfen" : "Review schedules and automation at any time"}</div></div>
-          </button>` : ""}
-          ${this._isAdmin() ? `<button class="settings-menu-item" data-settings-nav="settings-shutters">
-            <ha-icon icon="mdi:window-shutter-cog"></ha-icon>
-            <div><div class="name">${this._language() === "de" ? "Rollläden verwalten" : "Manage shutters"}</div>
-            <div class="meta">${this._language() === "de" ? "Rollläden hinzufügen, entfernen oder umbenennen" : "Add, remove, or rename shutters"}</div></div>
-          </button>` : ""}
-          <button class="settings-menu-item" data-settings-nav="settings-basic">
-            <ha-icon icon="mdi:cog"></ha-icon>
-            <div><div class="name">Basic Settings</div><div class="meta">Holiday/Frost Entity, Notifications</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-exceptions">
-            <ha-icon icon="mdi:calendar-clock"></ha-icon>
-            <div><div class="name">${this._exceptionText("Zeitliche Ausnahmen", "Temporal exceptions")}</div><div class="meta">${this._exceptionText("Automatik pausieren oder Fahrzeiten für einen Zeitraum ändern", "Pause automation or change times for a date range")}</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-triggers">
-            <ha-icon icon="mdi:remote"></ha-icon>
-            <div><div class="name">External Triggers</div><div class="meta">Time Triggers that can be triggered by Automations</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-areas">
-            <ha-icon icon="mdi:compass-outline"></ha-icon>
-            <div><div class="name">Areas</div><div class="meta">e.g. Front/Back/North/South - own groups with presets</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-shortcuts">
-            <ha-icon icon="mdi:gesture-tap-button"></ha-icon>
-            <div><div class="name">Dashboard shortcuts</div><div class="meta">Create, edit, and arrange home page shortcuts</div></div>
-          </button>
-          <button class="settings-menu-item" data-settings-nav="settings-global">
-            <ha-icon icon="mdi:earth"></ha-icon>
-            <div><div class="name">Global Entities</div><div class="meta">Times, Sun Offset, Target Position (global)</div></div>
-          </button>
+          ${item("settings-times", "mdi:clock-outline", de ? "Fahrzeiten &amp; Automatik" : "Times &amp; automation", de ? "Globale Zeiten, wiederkehrende Profile und Auslöser" : "Global times, recurring profiles and triggers")}
+          ${item("settings-areas", "mdi:compass-outline", de ? "Bereiche" : "Areas", de ? "Gruppen und deren Einstellungen" : "Groups and their settings")}
+          ${this._isAdmin() ? item("settings-shutters", "mdi:window-shutter-cog", de ? "Rollläden" : "Shutters", de ? "Hinzufügen, entfernen und umbenennen" : "Add, remove and rename") : ""}
+          ${item("settings-exceptions", "mdi:calendar-range", de ? "Ausnahmen" : "Exceptions", de ? "Einmalige Pausen oder andere Fahrzeiten für einen Zeitraum" : "One-time pauses or alternate times for a date range")}
+          ${item("settings-notifications", "mdi:bell-outline", de ? "Benachrichtigungen" : "Notifications", de ? "Globaler Empfänger, Vorwarnung und Vorlagen" : "Global recipient, pre-warning and templates")}
+          ${item("settings-shortcuts", "mdi:gesture-tap-button", de ? "Startseite anpassen" : "Customize home", de ? "Kurzbefehle anlegen und sortieren" : "Create and arrange shortcuts")}
+          ${item("settings-more", "mdi:cog-outline", de ? "Weitere Einstellungen" : "More settings", de ? "Globale Sensoren und Frostschutz" : "Global sensors and frost protection")}
         </div>
-      `;
+        <div class="settings-help"><span>${de ? "Hilfe zur Einrichtung" : "Setup help"}</span>
+          <button class="ssm-link-btn" data-settings-nav="onboarding">${de ? "Einrichtungsleitfaden öffnen" : "Open setup guide"}</button></div>`;
+    }
+
+    _renderSettingsTimes() {
+      const de = this._language() === "de";
+      return `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> ${de ? "Zurück zu Einstellungen" : "Back to settings"}</button>
+        <h2>${de ? "Fahrzeiten &amp; Automatik" : "Times &amp; automation"}</h2>
+        <div class="settings-menu">
+          <button class="settings-menu-item" data-settings-nav="settings-global"><ha-icon icon="mdi:earth"></ha-icon><div><div class="name">${de ? "Globale Fahrzeiten &amp; Automatik" : "Global times &amp; automation"}</div><div class="meta">${de ? "Profile, Sonnenversatz, Zielposition und Schalter · alle Rollläden" : "Profiles, sun offset, target position and switches · all shutters"}</div></div></button>
+          <button class="settings-menu-item" data-settings-nav="settings-schedules"><ha-icon icon="mdi:calendar-sync"></ha-icon><div><div class="name">${de ? "Wiederkehrende Zeitprofile" : "Recurring time profiles"}</div><div class="meta">${de ? "Regeln nach Wochentag und Wiederholung · alle Rollläden" : "Weekday and interval rules · all shutters"}</div></div></button>
+          <button class="settings-menu-item" data-settings-nav="settings-triggers"><ha-icon icon="mdi:remote"></ha-icon><div><div class="name">${de ? "Externe Auslöser" : "External triggers"}</div><div class="meta">${de ? "Fahrzeiten durch Home-Assistant-Automationen auslösen" : "Trigger times from Home Assistant automations"}</div></div></button>
+          <button class="settings-menu-item" data-settings-nav="settings-basic"><ha-icon icon="mdi:timer-cog-outline"></ha-icon><div><div class="name">${de ? "Zeitverhalten &amp; Jahreszeiten" : "Timing &amp; seasons"}</div><div class="meta">${de ? "Sommer-/Winterprofile, Pausen und Verzögerungen · global" : "Summer/winter profiles, pauses and delays · global"}</div></div></button>
+        </div>`;
+    }
+
+    _renderSettingsMore() {
+      const de = this._language() === "de";
+      return `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> ${de ? "Zurück zu Einstellungen" : "Back to settings"}</button>
+        <h2>${de ? "Weitere Einstellungen" : "More settings"}</h2><div class="settings-menu">
+          <button class="settings-menu-item" data-settings-nav="settings-more-basic"><ha-icon icon="mdi:thermometer"></ha-icon><div><div class="name">${de ? "Sensoren &amp; Frostschutz" : "Sensors &amp; frost protection"}</div><div class="meta">${de ? "Globale Sensoren und Standardschwelle" : "Global sensors and default threshold"}</div></div></button>
+        </div>`;
+    }
+
+    _settingsScope() {
+      const de = this._language() === "de";
+      const view = this._view;
+      if (view === "settings-areas") return de ? "Geltungsbereich: Bereiche und ihre zugeordneten Rollläden" : "Scope: areas and their assigned shutters";
+      if (view === "settings-area-edit") return de ? "Geltungsbereich: ausgewählter Bereich und seine Rollläden" : "Scope: selected area and its shutters";
+      if (view === "settings-shutters") return de ? "Geltungsbereich: verwaltete Rollläden" : "Scope: managed shutters";
+      if (view === "settings-exceptions" || view === "settings-exception-edit") return de ? "Geltungsbereich: gewählte Rollläden oder Bereiche; Zeitraum einmalig" : "Scope: selected shutters or areas; one-time date range";
+      if (view === "settings-schedule-edit" && this._editReturnAreaId) {
+        const area = ((this._backendConfig && this._backendConfig.custom_areas) || []).find((item) => item.id === this._editReturnAreaId);
+        const areaName = this._escapeHtml(area ? area.name : (de ? "ausgewählter Bereich" : "selected area"));
+        return de ? `Geltungsbereich: wiederkehrendes Profil für ${areaName}` : `Scope: recurring profile for ${areaName}`;
+      }
+      if (view === "settings-schedules" || view === "settings-schedule-edit") return de ? "Geltungsbereich: alle Rollläden; lokal überschreibbar · wiederkehrend" : "Scope: all shutters; locally overridable · recurring";
+      if (view === "settings-shortcuts" || view === "settings-shortcut-edit") return de ? "Geltungsbereich: Startseite dieser Integration" : "Scope: this integration's home page";
+      if (view === "settings-triggers" || view === "settings-trigger-edit") return de ? "Geltungsbereich: je nach gewähltem Auslöser" : "Scope: depends on the selected trigger";
+      if (view === "settings-times") return de ? "Geltungsbereich: je nach Unterseite global oder gezielt" : "Scope: global or targeted, depending on the page";
+      if (["settings-global", "settings-basic", "settings-notifications", "settings-more", "settings-more-basic"].includes(view)) return de ? "Geltungsbereich: global; einzelne Bereiche oder Rollläden können eigene Werte haben" : "Scope: global; areas or shutters may have their own values";
+      return "";
     }
 
     _entityPickerField(key, label, value, domains, dataAttr, hint = "", includeEntities = null) {
@@ -5093,7 +5438,7 @@
         <div class="form-field">
           <label>${label}</label>
           <div class="entity-picker-slot" data-entity-picker="${key}" data-picker-attr="${dataAttr}"
-               data-value="${value || ""}" data-domains="${(domains || []).join(",")}"
+               data-value="${this._escapeHtml(value || "").replace(/"/g, "&quot;")}" data-domains="${(domains || []).join(",")}"
                ${includeEntities ? `data-entities="${includeEntities.join(",")}"` : ""}></div>
           ${this._renderHint(hint)}
         </div>
@@ -5111,7 +5456,16 @@
         const value = slot.getAttribute("data-value") || "";
         const domains = (slot.getAttribute("data-domains") || "").split(",").filter(Boolean);
         const entities = (slot.getAttribute("data-entities") || "").split(",").filter(Boolean);
-
+        const updateValue = (nextValue) => {
+          slot.setAttribute("data-value", nextValue || "");
+          if (slot.getAttribute("data-picker-attr") === "data-basic-field") {
+            this._queueBasicField(slot.getAttribute("data-entity-picker"), nextValue || "");
+          }
+          if (this._view === "settings-area-edit" && slot.getAttribute("data-picker-attr") === "data-area-field") {
+            this._captureAreaDraft();
+            if (this._editingAreaId) this._queueAreaSave(0);
+          }
+        };
         if (customElements.get("ha-entity-picker")) {
           const picker = document.createElement("ha-entity-picker");
           picker.hass = this._hass;
@@ -5119,32 +5473,36 @@
           picker.allowCustomEntity = !entities.length;
           if (entities.length) picker.includeEntities = entities;
           else if (domains.length) picker.includeDomains = domains;
-          picker.addEventListener("value-changed", (ev) => {
-            slot.setAttribute("data-value", (ev.detail && ev.detail.value) || "");
-          });
+          picker.addEventListener("value-changed", (ev) => updateValue(ev.detail && ev.detail.value));
           slot.appendChild(picker);
+        } else if (entities.length) {
+          const select = document.createElement("select");
+          entities.forEach((id) => {
+            const opt = document.createElement("option");
+            opt.value = id;
+            opt.textContent = id;
+            if (id === value) opt.selected = true;
+            select.appendChild(opt);
+          });
+          select.addEventListener("change", () => updateValue(select.value));
+          slot.appendChild(select);
         } else {
-          // Fallback without ha-entity-picker (z.B. Test environment without real
-          // HA-Frontend) - simple selection/text field, functionally equivalent.
-          if (entities.length) {
-            const select = document.createElement("select");
-            entities.forEach((id) => {
-              const opt = document.createElement("option");
-              opt.value = id;
-              opt.textContent = id;
-              if (id === value) opt.selected = true;
-              select.appendChild(opt);
-            });
-            select.addEventListener("change", () => slot.setAttribute("data-value", select.value));
-            slot.appendChild(select);
-          } else {
-            const input = document.createElement("input");
-            input.type = "text";
-            input.value = value;
-            input.placeholder = domains.length ? `${domains.join("/")}.…` : "entity_id";
-            input.addEventListener("input", () => slot.setAttribute("data-value", input.value));
-            slot.appendChild(input);
-          }
+          const input = document.createElement("input");
+          input.type = "text";
+          input.value = value;
+          input.placeholder = domains.length ? `${domains.join("/")}.…` : "entity_id";
+          input.addEventListener("input", () => {
+            const nextValue = input.value;
+            slot.setAttribute("data-value", nextValue);
+            if (slot.getAttribute("data-picker-attr") === "data-basic-field") {
+              this._queueBasicField(slot.getAttribute("data-entity-picker"), nextValue);
+            }
+            if (this._view === "settings-area-edit" && slot.getAttribute("data-picker-attr") === "data-area-field") {
+              this._captureAreaDraft();
+              if (this._editingAreaId) this._queueAreaSave(650);
+            }
+          });
+          slot.appendChild(input);
         }
       });
     }
@@ -5239,41 +5597,48 @@
       });
     }
 
-    _renderSettingsBasic() {
+    _renderSettingsBasic(section = "automation") {
       const bs = (this._backendConfig && this._backendConfig.basic_settings) || {};
+      const draft = this._basicSave.draft;
+      const valueFor = (key, value) => Object.hasOwn(draft, key) ? draft[key] : value;
       const field = (key, label, value, type = "text", hint = "") => `
         <div class="form-field">
           <label>${label}</label>
-          <input type="${type}" data-basic-field="${key}" value="${value != null ? value : ""}" />
+          <input type="${type}" data-basic-field="${key}" value="${this._escapeHtml(String(valueFor(key, value) ?? ""))}" />
           ${this._renderHint(hint)}
         </div>
       `;
       const entityField = (key, label, value, domains, hint = "") =>
-        this._entityPickerField(key, label, value, domains, "data-basic-field", hint);
+        this._entityPickerField(key, label, valueFor(key, value), domains, "data-basic-field", hint);
       const textarea = (key, label, value, hint = "") => `
         <div class="form-field">
           <label>${label}</label>
-          <textarea data-basic-field="${key}">${value || ""}</textarea>
+          <textarea data-basic-field="${key}">${this._escapeHtml(String(valueFor(key, value) ?? ""))}</textarea>
           ${this._renderHint(hint)}
         </div>
       `;
 
-      let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
-      html += `<h2>Basic Settings</h2>`;
+      const de = this._language() === "de";
+      const title = section === "notifications" ? (de ? "Benachrichtigungen" : "Notifications")
+        : section === "sensors" ? (de ? "Sensoren &amp; Frostschutz" : "Sensors &amp; frost protection")
+          : (de ? "Zeitverhalten &amp; Jahreszeiten" : "Timing &amp; seasons");
+      let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> ${de ? "Zurück" : "Back"}</button>`;
+      html += `<h2>${title}</h2>`;
       html += `<div class="form-grid">`;
 
-      const de = this._language() === "de";
+      if (section === "automation") {
       html += `<h3>${de ? "Sommer- und Winterprofile" : "Summer and winter profiles"}</h3>
         ${this._infoHint(de ? "Verwendet die Home-Assistant-Zeitzone. Beim ersten Aktivieren werden die bisherigen Einstellungen in beide Profile übernommen." : "Uses the Home Assistant timezone. First activation copies existing settings into both profiles.")}
         <label class="control-row">
-          <input type="checkbox" data-basic-field="seasonal_enabled" ${bs.seasonal_enabled ? "checked" : ""} />
+          <input type="checkbox" data-basic-field="seasonal_enabled" ${valueFor("seasonal_enabled", bs.seasonal_enabled) ? "checked" : ""} />
           <span>${de ? "Automatisch mit der Zeitumstellung wechseln" : "Switch automatically with daylight saving time"}</span>
         </label>`;
+      }
 
       // v0.19.3 Unification: instead of a single, 14 fields
       // long list is now sorted into three clearly named groups -
       // easier to overview, without hiding a single field.
-      html += `<h3>Sensoren &amp; Frostschutz</h3>`;
+      if (section === "sensors") {
       html += entityField(
         "holiday_entity", "Holiday entity", bs.holiday_entity,
         ["binary_sensor", "input_boolean", "calendar"], "'an' = Ferien aktiv"
@@ -5295,8 +5660,9 @@
         bs.frost_threshold_c, "number",
         "Automatik pausiert (wie bei manuellem Eingriff), sobald Innen- oder Außentemperatur diesen Wert unterschreitet. Pro Bereich überschreibbar."
       );
+      }
 
-      html += `<h3>Notifications</h3>`;
+      if (section === "notifications") {
       html += this._notificationPickerField(bs.notify_service, 'data-basic-field="notify_service"');
       html += field(
         "pre_notify_lead_minutes", "Vorwarnung vor dem Schließen (Minuten)",
@@ -5323,7 +5689,9 @@
         bs.notify_text_preclose, "Variablen: name, time, action"
       );
       }
+      }
 
+      if (section === "automation") {
       html += `<h3>Timing and delays</h3>`;
       html += field(
         "postpone_options_minutes", "Verschieben-Optionen (Minuten, kommagetrennt)",
@@ -5343,33 +5711,105 @@
         bs.stagger_delay_ms, "number",
         "Verzögerung zwischen den einzelnen Rollläden bei Mehrfachaktionen (globaler Zeitplan, Bereich, 'Alle hoch/runter/Stopp') - Funk-Kollisionsschutz für funkbasierte Motoren. Bei WLAN-Geräten (z.B. Shelly) normalerweise nicht nötig."
       );
+      }
 
       html += `</div>`;
-      html += `<button class="save-btn" data-save-basic>Save</button>`;
-      html += `<span class="save-status" data-save-status></span>`;
+      html += `<span class="save-status" data-basic-save-status role="status" aria-live="polite">${this._escapeHtml(this._basicSave.status)}</span>
+        <button type="button" data-retry-basic ${this._basicSave.error ? "" : "hidden"}>${de ? "Erneut versuchen" : "Retry"}</button>`;
       return html;
     }
 
+    _setBasicSaveStatus(message, error = false) {
+      const state = this._basicSave;
+      state.status = message;
+      state.error = error;
+      const status = this.shadowRoot.querySelector("[data-basic-save-status]");
+      if (status) status.textContent = message;
+      const retry = this.shadowRoot.querySelector("[data-retry-basic]");
+      if (retry) retry.hidden = !error;
+    }
+
+    _basicPayload() {
+      const payload = { type: "smart_shutter/save_basic_settings", entry_id: this._backendConfig?.entry_id };
+      const integers = new Set(["pre_notify_lead_minutes", "notification_max_age_minutes", "catch_up_window_minutes", "manual_pause_minutes", "stagger_delay_ms"]);
+      let error = null;
+      for (const [key, raw] of Object.entries(this._basicSave.draft)) {
+        if (key === "frost_threshold_c" || integers.has(key)) {
+          const number = Number(raw);
+          if (key === "stagger_delay_ms" && number > 5000) {
+            error ||= this._language() === "de" ? "Die gestaffelte Verzögerung darf höchstens 5000 ms betragen. Änderungen sind noch nicht gespeichert." : "Stagger delay must be at most 5000 ms. Changes are not saved yet.";
+            continue;
+          }
+          if (String(raw).trim() === "" || !Number.isFinite(number) ||
+              (integers.has(key) && (!Number.isInteger(number) || number < 0))) {
+            error ||= this._language() === "de" ? "Bitte gültige Zahlen vollständig eingeben. Änderungen sind noch nicht gespeichert." : "Enter complete, valid numbers. Changes are not saved yet.";
+            continue;
+          }
+          payload[key] = number;
+        } else if (key === "postpone_options_minutes") {
+          if (raw.trim() && !/^\s*\d+(?:\s*,\s*\d+)*\s*$/.test(raw)) {
+            error ||= this._language() === "de" ? "Bitte Minuten als kommagetrennte Zahlen eingeben. Änderungen sind noch nicht gespeichert." : "Enter minutes as comma-separated numbers. Changes are not saved yet.";
+            continue;
+          }
+          payload[key] = raw;
+        } else {
+          payload[key] = raw;
+        }
+      }
+      return { payload, error, validKeys: Object.keys(payload).filter((key) => key !== "type" && key !== "entry_id") };
+    }
+
+    _queueBasicField(key, value) {
+      if (!key || !this._basicSave) return;
+      const state = this._basicSave;
+      if (Object.hasOwn(state.draft, key) && state.draft[key] === value) return;
+      const saved = this._backendConfig?.basic_settings?.[key];
+      if (!Object.hasOwn(state.draft, key) && String(saved ?? "") === String(value ?? "")) return;
+      state.draft[key] = value;
+      state.revision += 1;
+      const { error } = this._basicPayload();
+      this._setBasicSaveStatus(error || (this._language() === "de" ? "Wird gespeichert…" : "Saving…"));
+      this._scheduleBasicSave(650);
+    }
+
+    _scheduleBasicSave(delay) {
+      const state = this._basicSave;
+      if (state.timer) clearTimeout(state.timer);
+      if (!Object.keys(state.draft).length) return;
+      const { error, validKeys } = this._basicPayload();
+      if (!validKeys.length) { if (error) this._setBasicSaveStatus(error); return; }
+      if (state.saving) return;
+      state.timer = setTimeout(() => { state.timer = null; this._saveBasicSettings(); }, delay);
+    }
+
     async _saveBasicSettings() {
-      const body = this.shadowRoot.querySelector(".body");
-      const payload = { type: "smart_shutter/save_basic_settings" };
-      body.querySelectorAll("[data-basic-field]").forEach((el) => {
-        const key = el.getAttribute("data-basic-field");
-        const isNumber = el.type === "number";
-        payload[key] = el.type === "checkbox" ? el.checked : isNumber ? Number(el.value) : el.value;
-      });
-      body.querySelectorAll('[data-entity-picker][data-picker-attr="data-basic-field"]').forEach((slot) => {
-        payload[slot.getAttribute("data-entity-picker")] = slot.getAttribute("data-value") || "";
-      });
-      const statusEl = body.querySelector("[data-save-status]");
+      const state = this._basicSave;
+      if (state.saving) return;
+      const { payload, validKeys } = this._basicPayload();
+      if (!validKeys.length) return;
+      const sent = Object.fromEntries(validKeys.map((key) => [key, state.draft[key]]));
+      const revision = state.revision;
+      state.saving = true;
+      this._setBasicSaveStatus(this._language() === "de" ? "Wird gespeichert…" : "Saving…");
       try {
         await this._hass.callWS(payload);
         await this._loadBackendConfig();
-        this._haptic("success");
-        if (statusEl) statusEl.textContent = this._message("saved");
+        for (const key of validKeys) {
+          if (state.draft[key] === sent[key]) delete state.draft[key];
+        }
+        if (!Object.keys(state.draft).length) state.savedRevision = state.revision;
+        if (revision === state.revision && !Object.keys(state.draft).length) {
+          this._setBasicSaveStatus(this._language() === "de" ? "Gespeichert." : "Saved.");
+        } else if (revision === state.revision) {
+          this._setBasicSaveStatus(this._basicPayload().error || (this._language() === "de" ? "Wird gespeichert…" : "Saving…"));
+        }
       } catch (err) {
-        this._haptic("failure");
-        if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        if (revision === state.revision) {
+          this._setBasicSaveStatus(this._message("errorPrefix") + (err?.message || String(err)), true);
+        }
+      } finally {
+        state.saving = false;
+        if (revision !== state.revision) this._scheduleBasicSave(0);
       }
     }
 
@@ -5380,7 +5820,7 @@
     _renderNotificationSettings(settings, coverEntityId = null, areaId = null) {
       const de = this._language() === "de";
       const area = !coverEntityId;
-      const autosave = !area || !!areaId;
+      const autosave = !area;
       const saveKey = coverEntityId ? `shutter:${coverEntityId}` : areaId ? `area:${areaId}` : null;
       const state = saveKey && this._notificationSaveStates && this._notificationSaveStates.get(saveKey);
       const displaySettings = state && state.draft && state.revision > state.savedRevision
@@ -5577,21 +6017,65 @@
       }
     }
 
-    async _saveShutterNote(coverEntityId, note) {
-      const body = this.shadowRoot.querySelector(".body");
-      const statusEl = body.querySelector("[data-save-status]");
+    _setShutterNoteStatus(coverEntityId, state, message, error = false) {
+      state.status = message;
+      state.error = error;
+      const status = [...this.shadowRoot.querySelectorAll("[data-note-save-status]")]
+        .find((el) => el.getAttribute("data-note-save-status") === coverEntityId);
+      if (status) status.textContent = message;
+      const retry = [...this.shadowRoot.querySelectorAll("[data-retry-note]")]
+        .find((el) => el.getAttribute("data-retry-note") === coverEntityId);
+      if (retry) retry.hidden = !error;
+    }
+
+    _queueShutterNote(coverEntityId, note, delay) {
+      if (!coverEntityId) return;
+      let state = this._noteSaves.get(coverEntityId);
+      if (!state) {
+        state = { draft: "", revision: 0, savedRevision: 0, timer: null, saving: false, status: "" };
+        this._noteSaves.set(coverEntityId, state);
+      }
+      if (state.revision && state.draft === note) return;
+      state.draft = note;
+      state.revision += 1;
+      this._setShutterNoteStatus(coverEntityId, state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
+      this._scheduleShutterNoteSave(coverEntityId, delay);
+    }
+
+    _scheduleShutterNoteSave(coverEntityId, delay) {
+      const state = this._noteSaves.get(coverEntityId);
+      if (!state) return;
+      if (state.timer) clearTimeout(state.timer);
+      if (state.saving || state.revision === state.savedRevision) return;
+      state.timer = setTimeout(() => { state.timer = null; this._saveShutterNote(coverEntityId); }, delay);
+    }
+
+    async _saveShutterNote(coverEntityId) {
+      const state = this._noteSaves.get(coverEntityId);
+      if (!state || state.saving) return;
+      const revision = state.revision;
+      const note = state.draft;
+      state.saving = true;
+      this._setShutterNoteStatus(coverEntityId, state, this._language() === "de" ? "Wird gespeichert…" : "Saving…");
       try {
         await this._hass.callWS({
           type: "smart_shutter/save_shutter_note",
+          entry_id: this._backendConfig?.entry_id,
           entity_id: coverEntityId,
-          note: note || "",
+          note,
         });
         await this._loadBackendConfig();
-        this._haptic("success");
-        if (statusEl) statusEl.textContent = this._message("saved");
+        state.savedRevision = revision;
+        if (revision === state.revision) {
+          this._setShutterNoteStatus(coverEntityId, state, this._language() === "de" ? "Gespeichert." : "Saved.");
+        }
       } catch (err) {
-        this._haptic("failure");
-        if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        if (revision === state.revision) {
+          this._setShutterNoteStatus(coverEntityId, state, this._message("errorPrefix") + (err?.message || String(err)), true);
+        }
+      } finally {
+        state.saving = false;
+        if (revision !== state.revision) this._scheduleShutterNoteSave(coverEntityId, 0);
       }
     }
 
@@ -5762,6 +6246,8 @@
       const sectionToggle = (key, title, defaultExpanded, infoText = "") =>
         this._sectionToggle(key, title, defaultExpanded, infoText);
 
+      html += `<h3>${this._exceptionText("Bereichsvorlage: Trigger, Sonnenversatz und Zielposition", "Area template: trigger, sun offset, and target position")}</h3>`;
+      html += `<p class="hint">${this._exceptionText("Nur diese Werte werden mit „Auf Mitglieder anwenden“ in individuelle Einstellungen kopiert. Spätere Änderungen an der Bereichsvorlage folgen nicht automatisch.", "Only these values are copied to individual settings when you choose “Apply to members”. Later changes to the area template do not update members automatically.")}</p>`;
       html += `<h3>Trigger Type (optional)</h3>`;
       html += typeField("open", "Öffnen");
       html += typeField("close", "Schließen");
@@ -5774,6 +6260,7 @@
       html += numberField("open_position", "Öffnen", "%", 0, 100);
       html += numberField("close_position", "Schließen", "%", 0, 100);
 
+      html += `<h3>${this._exceptionText("Weitere Bereichseinstellungen", "Other area settings")}</h3>`;
       const sunEnabled = existing ? !!existing.sun_position_enabled : false;
       const sunSection = sectionToggle(
         "sun",
@@ -6032,13 +6519,12 @@
         });
       }
 
-      html += `<button class="add-btn" data-area-save>${
-        existing ? '<ha-icon icon="mdi:content-save"></ha-icon> Speichern' : '<ha-icon icon="mdi:plus"></ha-icon> Bereich anlegen'
-      }</button>`;
+      html += `<button class="add-btn" data-area-save>${existing ? '<ha-icon icon="mdi:content-save"></ha-icon> Speichern' : '<ha-icon icon="mdi:plus"></ha-icon> Bereich anlegen'}</button>`;
       if (existing) {
         html += `<button class="add-btn" data-area-apply="${existing.id}"><ha-icon icon="mdi:content-save-move-outline"></ha-icon> Apply to all members now</button>`;
+        html += `<p class="hint">${this._exceptionText("Kopiert die Bereichsvorlage jetzt in die individuellen Einstellungen der Mitglieder. Spätere Änderungen an der Vorlage werden nicht automatisch übernommen.", "Copies the area template into members’ individual settings now. Later template changes are not applied automatically.")}</p>`;
       }
-      html += `<span class="save-status" data-save-status></span>`;
+      html += `<span class="save-status" data-save-status role="status" aria-live="polite"></span><button class="link-btn" data-area-retry hidden>${this._exceptionText("Erneut versuchen", "Retry")}</button>`;
       return html;
     }
 
@@ -6175,9 +6661,9 @@
     }
 
     _renderSettingsExceptions() {
-      return `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`
-        + this._renderExceptionSection(null, null, { framed: false })
-        + `<button class="add-btn" data-settings-nav="${(this._backendConfig || {}).restricted ? "settings-areas" : "settings-schedules"}"><ha-icon icon="mdi:calendar-sync"></ha-icon> ${this._exceptionText("Wiederkehrende Zeitprofile", "Recurring time profiles")}</button>`;
+      return `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> ${this._exceptionText("Zurück zu Einstellungen", "Back to settings")}</button>`
+        + `<h2>${this._exceptionText("Einmalige Ausnahmen", "One-time exceptions")}</h2>`
+        + this._renderExceptionSection(null, null, { framed: false });
     }
 
     _renderExceptionEdit() {
@@ -6218,7 +6704,7 @@
             <label for="exception-close">${this._exceptionText("Schließen (optional)", "Closing (optional)")}</label><input id="exception-close" type="time" data-exception-field="close_time" value="${this._escapeHtml(rule.close_time || "")}">
             <p class="hint">${this._exceptionText("Leere Felder folgen dem bisherigen Zeitplan.", "Empty fields follow the existing schedule.")}</p></fieldset>
         </div>
-        <button type="button" class="save-btn" data-save-exception>Save</button><span class="save-status" data-exception-status-message role="status"></span></form>`;
+        <button type="button" class="save-btn" data-save-exception>Save</button><span class="save-status" data-exception-status-message role="status" aria-live="polite"></span><button type="button" data-rule-retry hidden>${this._exceptionText("Erneut versuchen", "Retry")}</button></form>`;
     }
 
     _exceptionError(code) {
@@ -6234,12 +6720,14 @@
       return messages[code] ? this._exceptionText(...messages[code]) : code;
     }
 
-    async _saveException() {
+    async _saveException(autosave = false) {
+      if (!autosave && this._ruleSaveInFlight) return false;
+      const generation = this._ruleEditorGeneration;
       const form = this.shadowRoot.querySelector("[data-exception-form]");
-      if (!form.reportValidity()) return;
+      if (!form || !(autosave ? form.checkValidity() : form.reportValidity())) return false;
       const status = form.querySelector("[data-exception-status-message]");
       const button = form.querySelector("[data-save-exception]");
-      if (button.disabled) return;
+      if (button.disabled) return false;
       const field = (key) => form.querySelector(`[data-exception-field="${key}"]`).value;
       const targets = (type) => [...form.querySelectorAll(`[data-exception-target="${type}"]:checked`)].map((el) => el.value);
       const rule = {
@@ -6252,7 +6740,7 @@
         : !rule.cover_ids.length && !rule.area_ids.length ? "invalid_targets"
         : rule.mode === "pause" && !rule.actions.length ? "invalid_actions"
         : rule.mode === "times" && !rule.open_time && !rule.close_time ? "missing_times" : null;
-      if (error) { status.textContent = this._exceptionError(error); return; }
+      if (error) { status.textContent = this._exceptionError(error); return false; }
       button.disabled = true;
       status.textContent = this._exceptionText("Wird gespeichert …", "Saving …");
       try {
@@ -6260,10 +6748,18 @@
         if (!result.success) {
           const details = (result.conflicts || []).map((r) => this._exceptionSummary(r)).join("; ");
           status.textContent = `${this._exceptionError(result.validation_error)}${details ? ` ${details}` : ""}`;
-          return;
+          return false;
         }
         await this._loadBackendConfig();
         this._invalidateForecastCache();
+        if (autosave) {
+          if (generation === this._ruleEditorGeneration) {
+            this._editingExceptionId = result.exception.id;
+            this._exceptionReactivating = false;
+          }
+          status.textContent = this._exceptionText("Gespeichert.", "Saved.");
+          return true;
+        }
         const returnView = this._exceptionReturnView || "settings-exceptions";
         const sectionKey = returnView === "detail"
           ? this._exceptionSectionKey(this._exceptionReturnCover || rule.cover_ids[0] || null, null)
@@ -6274,7 +6770,8 @@
         this._exceptionReactivating = false;
         this._view = this._exceptionReturnView || "settings-exceptions";
         this._render();
-      } catch (err) { status.textContent = `${this._exceptionText("Speichern fehlgeschlagen", "Save failed")}: ${err.message || err}`; }
+        return true;
+      } catch (err) { status.textContent = `${this._exceptionText("Speichern fehlgeschlagen", "Save failed")}: ${err.message || err}`; return false; }
       finally { button.disabled = false; }
     }
 
@@ -6380,7 +6877,7 @@
       `;
       html += `</div>`;
       html += `<button class="save-btn" data-save-schedule>Save</button>`;
-      html += `<span class="save-status" data-save-status></span>`;
+      html += `<span class="save-status" data-save-status role="status" aria-live="polite"></span><button type="button" data-rule-retry hidden>${this._language() === "de" ? "Erneut versuchen" : "Retry"}</button>`;
       return html;
     }
 
@@ -6448,7 +6945,9 @@
       }
     }
 
-    async _saveSchedule() {
+    async _saveSchedule(autosave = false) {
+      if (!autosave && this._ruleSaveInFlight) return false;
+      const generation = this._ruleEditorGeneration;
       const body = this.shadowRoot.querySelector(".body");
       const statusEl = body.querySelector("[data-save-status]");
       const editingId = this._editingScheduleId;
@@ -6462,7 +6961,7 @@
         return el ? el.value : "";
       };
       const rule = {
-        id: editingId || "",
+        id: editingId || this._newRuleId("custom_"),
         name: field("name").trim(),
         weekdays,
         interval_weeks: Number(field("interval_weeks")) || 1,
@@ -6479,16 +6978,21 @@
         // leaves all shared + foreign area rules untouched.
         const allSchedules = (this._backendConfig && this._backendConfig.custom_schedules) || [];
         const areaSchedules = allSchedules.filter((r) => r.area_id === areaId);
-        const others = editingId ? areaSchedules.filter((r) => r.id !== editingId) : areaSchedules;
-        await this._submitAreaSchedules(areaId, [...others, rule], false, statusEl);
-        return;
+        const index = areaSchedules.findIndex((r) => r.id === editingId);
+        if (index >= 0) areaSchedules[index] = rule;
+        else areaSchedules.push(rule);
+        const saved = await this._submitAreaSchedules(areaId, areaSchedules, false, statusEl, autosave);
+        if (saved && autosave && generation === this._ruleEditorGeneration) this._editingScheduleId = rule.id;
+        return saved;
       }
 
       const schedules = [...((this._backendConfig && this._backendConfig.custom_schedules) || [])];
-      const others = editingId ? schedules.filter((r) => r.id !== editingId) : schedules;
-      const newList = [...others, rule];
-
-      await this._submitSchedules(newList, false, statusEl);
+      const index = schedules.findIndex((r) => r.id === editingId);
+      if (index >= 0) schedules[index] = rule;
+      else schedules.push(rule);
+      const saved = await this._submitSchedules(schedules, false, statusEl, autosave);
+      if (saved && autosave && generation === this._ruleEditorGeneration) this._editingScheduleId = rule.id;
+      return saved;
     }
 
     async _saveAreas(areas, navigate = true) {
@@ -6501,6 +7005,10 @@
             this._view = "settings-areas";
           }
         }
+        if (!result.success) {
+          const status = this.shadowRoot.querySelector("[data-save-status]");
+          if (status) status.textContent = this._message("errorPrefix") + (result.message || result.validation_error || "Could not save area.");
+        }
         if (navigate) this._render();
         return !!result.success;
       } catch (err) {
@@ -6511,57 +7019,162 @@
       }
     }
 
-    async _saveShutterAreas(shutterAreas) {
-      const result = await this._hass.callWS({ type: "smart_shutter/save_shutter_areas", shutter_areas: shutterAreas });
-      if (result && result.success === false) {
-        throw new Error(result.validation_error === "conflicting_temporal_exceptions"
-          ? this._exceptionText("Diese Bereichszuordnung erzeugt überlappende Fahrzeiten-Ausnahmen. Passe die Ausnahmen oder die Rollladen-Zuordnung an.", "These area assignments create overlapping timed exceptions. Adjust the exceptions or shutter assignments.")
-          : this._message("errorPrefix") + (result.validation_error || "Could not save area assignments."));
+    _captureAreaDraft() {
+      if (this._view !== "settings-area-edit") return;
+      const body = this.shadowRoot.querySelector(".body");
+      if (!body) return;
+      const state = this._areaDraft || { areaId: this._editingAreaId, fields: {}, users: {}, members: {}, revision: 0, savedRevision: 0, timer: null, saving: false, status: "", error: false };
+      const fields = { ...state.fields };
+      const users = { ...state.users };
+      const members = { ...state.members };
+      body.querySelectorAll("[data-area-field]").forEach((el) => {
+        fields[el.getAttribute("data-area-field")] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      body.querySelectorAll('[data-entity-picker][data-picker-attr="data-area-field"]').forEach((slot) => {
+        fields[slot.getAttribute("data-entity-picker")] = slot.getAttribute("data-value") || "";
+      });
+      body.querySelectorAll("[data-area-user]").forEach((el) => { users[el.getAttribute("data-area-user")] = el.checked; });
+      body.querySelectorAll("[data-area-member]").forEach((el) => { members[el.getAttribute("data-area-member")] = el.checked; });
+      const changed = (before, after) => Object.keys(before).length !== Object.keys(after).length ||
+        Object.keys(after).some((key) => before[key] !== after[key]);
+      const hasChanges = changed(state.fields, fields) || changed(state.users, users) || changed(state.members, members);
+      state.fields = fields;
+      state.users = users;
+      state.members = members;
+      this._areaDraft = state;
+      if (hasChanges) {
+        state.revision += 1;
+        state.error = false;
       }
-      await this._loadBackendConfig();
     }
 
-    async _collectAndSaveArea() {
+    _restoreAreaDraft() {
+      if (!this._areaDraft) {
+        this._captureAreaDraft();
+        this._areaDraft.revision = 0;
+        this._areaDraft.savedRevision = 0;
+        this._areaDraft.status = "";
+        this._areaDraft.error = false;
+      }
+      const state = this._areaDraft;
+      const body = this.shadowRoot.querySelector(".body");
+      body.querySelectorAll("[data-area-field]").forEach((el) => {
+        const key = el.getAttribute("data-area-field");
+        if (!Object.hasOwn(state.fields, key)) return;
+        if (el.type === "checkbox") el.checked = state.fields[key];
+        else el.value = state.fields[key];
+      });
+      body.querySelectorAll('[data-entity-picker][data-picker-attr="data-area-field"]').forEach((slot) => {
+        const key = slot.getAttribute("data-entity-picker");
+        if (!Object.hasOwn(state.fields, key)) return;
+        slot.setAttribute("data-value", state.fields[key]);
+        const picker = slot.querySelector("ha-entity-picker");
+        if (picker) picker.value = state.fields[key];
+        const fallback = slot.querySelector("input, select");
+        if (fallback) fallback.value = state.fields[key];
+      });
+      const notification = body.querySelector("[data-notification-settings]");
+      if (notification) {
+        const mode = notification.querySelector("[data-notification-mode]").value;
+        const preMode = notification.querySelector("[data-pre-notify-mode]").value;
+        notification.querySelector("[data-notification-recipient-field]").style.display = mode === "custom" ? "" : "none";
+        notification.querySelector("[data-pre-notify-minutes-field]").style.display = preMode === "custom" ? "" : "none";
+        this._mountNotificationPickers(notification);
+      }
+      for (const [attribute, values] of [["data-area-user", state.users], ["data-area-member", state.members]]) {
+        body.querySelectorAll(`[${attribute}]`).forEach((el) => {
+          const key = el.getAttribute(attribute);
+          if (Object.hasOwn(values, key)) el.checked = values[key];
+        });
+      }
+      this._setAreaSaveStatus(state, state.status, state.error);
+    }
+
+    _setAreaSaveStatus(state, message, error = false) {
+      state.status = message;
+      state.error = error;
+      if (this._areaDraft !== state || this._view !== "settings-area-edit") return;
+      const status = this.shadowRoot.querySelector("[data-save-status]");
+      const retry = this.shadowRoot.querySelector("[data-area-retry]");
+      if (status) status.textContent = message;
+      if (retry) retry.hidden = !error;
+    }
+
+    _queueAreaSave(delay) {
+      const state = this._areaDraft;
+      if (!state) return;
+      if (state.timer) clearTimeout(state.timer);
+      this._setAreaSaveStatus(state, this._exceptionText("Wird gespeichert…", "Saving…"));
+      state.timer = setTimeout(() => {
+        state.timer = null;
+        this._flushAreaSave(state);
+      }, delay);
+    }
+
+    async _flushAreaSave(state) {
+      if (state.saving) return;
+      const revision = state.revision;
+      const snapshot = { fields: { ...state.fields }, users: { ...state.users }, members: { ...state.members } };
+      state.saving = true;
+      try {
+        await this._collectAndSaveArea(snapshot, state);
+        state.savedRevision = revision;
+        if (this._areaDraft === state && revision === state.revision) {
+          this._setAreaSaveStatus(state, this._exceptionText("Automatisch gespeichert.", "Saved automatically."));
+          if (state.navigateOnSave) {
+            state.navigateOnSave = false;
+            this._areaDraft = null;
+            this._editingAreaId = null;
+            this._view = "settings-areas";
+            this._render();
+          }
+        }
+      } catch (err) {
+        if (this._areaDraft === state && revision === state.revision) {
+          this._setAreaSaveStatus(state, this._message("errorPrefix") + (err.message || String(err)), true);
+          this._haptic("failure");
+        }
+      } finally {
+        state.saving = false;
+        if (state.revision !== revision && !state.timer) this._queueAreaSave(0);
+      }
+    }
+
+    async _collectAndSaveArea(draft, state) {
       const body = this.shadowRoot.querySelector(".body");
       const existingAreas = (this._backendConfig && this._backendConfig.custom_areas) || [];
-      const existing = this._editingAreaId ? existingAreas.find((a) => a.id === this._editingAreaId) : null;
+      const existing = state.areaId ? existingAreas.find((a) => a.id === state.areaId) : null;
+      const field = (key) => Object.hasOwn(draft.fields, key) ? draft.fields[key] : undefined;
       const readNumber = (key) => {
-        const el = body.querySelector(`[data-area-field="${key}"]`);
-        if (!el) return existing && existing[key] !== undefined ? existing[key] : null;
-        const v = el && el.value.trim();
+        const raw = field(key);
+        if (raw === undefined) return existing && existing[key] !== undefined ? existing[key] : null;
+        const v = String(raw).trim();
         return v ? parseInt(v, 10) : null;
       };
       const readSelect = (key) => {
-        const el = body.querySelector(`[data-area-field="${key}"]`);
-        return el && el.value ? el.value : null;
+        const value = field(key);
+        return value === undefined ? (existing && existing[key]) || null : value || null;
       };
 
       const readCheckbox = (key) => {
-        const el = body.querySelector(`[data-area-field="${key}"]`);
-        if (!el) return existing ? !!existing[key] : false;
-        return !!(el && el.checked);
+        const value = field(key);
+        return value === undefined ? !!(existing && existing[key]) : !!value;
       };
 
       const readText = (key) => {
-        const el = body.querySelector(`[data-area-field="${key}"]`);
-        if (!el) return existing && existing[key] ? existing[key] : null;
-        return el && el.value.trim() ? el.value.trim() : null;
+        const value = field(key);
+        return value === undefined ? (existing && existing[key]) || null : String(value).trim() || null;
       };
 
       const readFloat = (key) => {
-        const el = body.querySelector(`[data-area-field="${key}"]`);
-        if (!el) return existing && existing[key] !== undefined ? existing[key] : null;
-        const v = el && el.value.trim();
+        const raw = field(key);
+        if (raw === undefined) return existing && existing[key] !== undefined ? existing[key] : null;
+        const v = String(raw).trim();
         return v ? parseFloat(v) : null;
       };
 
       const readEntityPicker = (key) => {
-        const slot = body.querySelector(
-          `[data-entity-picker="${key}"][data-picker-attr="data-area-field"]`
-        );
-        if (!slot) return existing && existing[key] ? existing[key] : null;
-        const v = (slot.getAttribute("data-value") || "").trim();
-        return v || null;
+        return field(key) === undefined ? (existing && existing[key]) || null : String(field(key)).trim() || null;
       };
 
       // business area settings - for admins AND (v0.18)
@@ -6594,11 +7207,13 @@
         pre_notify_lead_minutes: readNumber("pre_notify_lead_minutes"),
       };
       if (operationalFields.notification_mode !== "custom") operationalFields.notify_service = "";
-      const recipient = body.querySelector("[data-notification-recipient]");
-      if (operationalFields.notification_mode === "custom" && recipient && !recipient.value.trim()) return;
+      if (operationalFields.notification_mode === "custom" && !operationalFields.notify_service) {
+        throw new Error(this._exceptionText("Bitte einen Benachrichtigungsdienst wählen.", "Select a notification service."));
+      }
       if (operationalFields.pre_notify_mode === "custom") {
-        const minutes = body.querySelector("[data-pre-notify-minutes]");
-        if (minutes && (!minutes.value || !minutes.reportValidity())) return;
+        if (!Number.isInteger(operationalFields.pre_notify_lead_minutes) || operationalFields.pre_notify_lead_minutes < 1 || operationalFields.pre_notify_lead_minutes > 1440) {
+          throw new Error(this._exceptionText("Bitte eine gültige Vorwarnzeit eingeben.", "Enter a valid warning time."));
+        }
       } else {
         delete operationalFields.pre_notify_lead_minutes;
       }
@@ -6609,8 +7224,7 @@
           operationalFields.sun_elevation_min === null ||
           operationalFields.sun_position_target === null)
       ) {
-        window.alert(this._message("sunValuesRequired"));
-        return;
+        throw new Error(this._message("sunValuesRequired"));
       }
 
       if (!this._isAdmin()) {
@@ -6619,40 +7233,38 @@
         // no user assignment. The server verifies the permission
         // additionally defined by itself (see _allowed_area_ids), this is only
         // the corresponding UI for it.
-        if (!existing) return;
-        await this._hass.callWS({
+        if (!existing) throw new Error(this._message("areaNameRequired"));
+        const result = await this._hass.callWS({
           type: "smart_shutter/save_own_area_settings",
           area_id: existing.id,
           fields: operationalFields,
         });
+        if (result && result.success === false) throw new Error(result.message || result.validation_error || "Could not save area.");
         await this._loadBackendConfig();
-        this._editingAreaId = null;
-        this._view = "settings-areas";
-        this._render();
+        if (this._backendError) throw new Error(this._backendError);
         return;
       }
 
-      const name = body.querySelector('[data-area-field="name"]').value.trim();
+      const name = String(field("name") || "").trim();
       if (!name) {
-        window.alert(this._message("areaNameRequired"));
-        return;
+        throw new Error(this._message("areaNameRequired"));
       }
 
       // ID assigned client-side (instead of guessing them after saving
       // must) - this allows the member assignment to be done in the same step
       // with saving, also for a completely new area.
-      const areaId = this._editingAreaId || `area_${Math.random().toString(16).slice(2, 10)}`;
+      const areaId = state.areaId || `area_${Math.random().toString(16).slice(2, 10)}`;
+      state.areaId = areaId;
 
       const areas = [...((this._backendConfig && this._backendConfig.custom_areas) || [])];
       const existingIdx = areas.findIndex((a) => a.id === areaId);
-      const assignedUserIds = Array.from(body.querySelectorAll("[data-area-user]"))
-        .filter((cb) => cb.checked)
-        .map((cb) => cb.getAttribute("data-area-user"));
+      const assignedUserIds = new Set((existing && existing.assigned_ha_user_ids) || []);
+      Object.entries(draft.users).forEach(([id, checked]) => checked ? assignedUserIds.add(id) : assignedUserIds.delete(id));
       const area = {
         id: areaId,
         name,
         ...operationalFields,
-        assigned_ha_user_ids: assignedUserIds,
+        assigned_ha_user_ids: [...assignedUserIds],
       };
       if (existingIdx >= 0) areas[existingIdx] = area;
       else areas.push(area);
@@ -6663,26 +7275,54 @@
       // Areas remain untouched (a shutter can belong to multiple
       // areas at the same time, z.B. "Behind" AND "Living areas").
       const shutterAreas = { ...((this._backendConfig && this._backendConfig.shutter_areas) || {}) };
-      body.querySelectorAll("[data-area-member]").forEach((cb) => {
-        const coverEntityId = cb.getAttribute("data-area-member");
+      const membershipChanged = Object.entries(draft.members).some(([coverEntityId, checked]) =>
+        (shutterAreas[coverEntityId] || []).includes(areaId) !== checked);
+      Object.entries(draft.members).forEach(([coverEntityId, checked]) => {
         const current = shutterAreas[coverEntityId] || [];
         const withoutThisArea = current.filter((id) => id !== areaId);
-        shutterAreas[coverEntityId] = cb.checked
+        shutterAreas[coverEntityId] = checked
           ? (current.includes(areaId) ? current : [...current, areaId])
           : withoutThisArea;
         if (!shutterAreas[coverEntityId].length) delete shutterAreas[coverEntityId];
       });
 
       // Validate the area before changing membership; keep the draft on errors.
-      if (!await this._saveAreas(areas, false)) return;
-      this._editingAreaId = areaId;
-      await this._saveShutterAreas(shutterAreas);
-      this._editingAreaId = null;
-      this._view = "settings-areas";
-      this._render();
+      const result = await this._hass.callWS({ type: "smart_shutter/save_custom_areas", areas });
+      if (!result || result.success === false) throw new Error((result && (result.message || result.validation_error)) || "Could not save area.");
+      this._backendConfig.custom_areas = areas;
+      if (this._areaDraft === state && this._view === "settings-area-edit") this._editingAreaId = areaId;
+      // Membership is a separate backend operation. Keep the same draft and
+      // retry both calls if this second operation fails.
+      if (membershipChanged) {
+        const membershipResult = await this._hass.callWS({ type: "smart_shutter/save_shutter_areas", shutter_areas: shutterAreas });
+        if (!membershipResult || membershipResult.success === false) throw new Error(membershipResult && membershipResult.validation_error === "conflicting_temporal_exceptions"
+          ? this._exceptionText("Diese Bereichszuordnung erzeugt überlappende Fahrzeiten-Ausnahmen.", "These area assignments create overlapping timed exceptions.")
+          : (membershipResult && membershipResult.validation_error) || "Could not save area assignments.");
+      }
+      await this._loadBackendConfig();
+      if (this._backendError) throw new Error(this._backendError);
+      if (this._areaDraft === state && this._view === "settings-area-edit" && this._editingAreaId === areaId && !existing && !state.navigateOnSave) this._render();
     }
 
     async _applyAreaToMembers(areaId) {
+      // Applying presets is explicit, but it must use the latest edited values.
+      // Flush any area draft first and stop if validation or persistence fails.
+      const draft = this._areaDraft;
+      if (draft && draft.areaId === areaId) {
+        while (draft.saving || draft.timer || draft.savedRevision < draft.revision) {
+          if (draft.timer) {
+            clearTimeout(draft.timer);
+            draft.timer = null;
+          }
+          if (draft.saving) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            continue;
+          }
+          if (draft.error) return;
+          await this._flushAreaSave(draft);
+          if (draft.error) return;
+        }
+      }
       const area = ((this._backendConfig && this._backendConfig.custom_areas) || []).find((a) => a.id === areaId);
       if (!area) return;
       const members = this._areaMembers(areaId);
@@ -6806,7 +7446,7 @@
       }
     }
 
-    async _submitSchedules(schedules, force, statusEl) {
+    async _submitSchedules(schedules, force, statusEl, autosave = false) {
       try {
         const result = await this._hass.callWS({
           type: "smart_shutter/save_custom_schedules",
@@ -6816,24 +7456,34 @@
         if (result.success) {
           await this._loadBackendConfig();
           this._haptic("success");
+          if (autosave) {
+            if (statusEl) statusEl.textContent = this._language() === "de" ? "Gespeichert." : "Saved.";
+            return true;
+          }
           this._editingScheduleId = null;
           this._exitEditor("settings-schedules");
           this._render();
-          return;
+          return true;
         }
         if (result.conflicts && result.conflicts.length) {
           this._haptic("warning");
+          const accepted = (this._backendConfig && this._backendConfig.schedule_conflicts) || {};
+          const onlyExisting = result.conflicts.every((conflict) =>
+            conflict.overlapping_with.every((other) => (accepted[conflict.rule_id] || []).includes(other.id)));
+          if (autosave && onlyExisting) return this._submitSchedules(schedules, true, statusEl, true);
           const names = result.conflicts
             .flatMap((c) => c.overlapping_with.map((o) => o.name))
             .join(", ");
-          if (
+          if (!autosave &&
             window.confirm(
               this._message("confirmScheduleConflict", names)
             )
           ) {
-            await this._submitSchedules(schedules, true, statusEl);
+            return this._submitSchedules(schedules, true, statusEl);
           }
-          return;
+          if (statusEl) statusEl.textContent = this._message("confirmScheduleConflict", names);
+          this._ruleConflict = true;
+          return false;
         }
         if (result.validation_error) {
           this._haptic("failure");
@@ -6844,13 +7494,15 @@
           };
           if (statusEl) statusEl.textContent = messages[result.validation_error] || this._message("invalidInput");
         }
+        return false;
       } catch (err) {
         this._haptic("failure");
         if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        return false;
       }
     }
 
-    async _submitAreaSchedules(areaId, schedules, force, statusEl) {
+    async _submitAreaSchedules(areaId, schedules, force, statusEl, autosave = false) {
       try {
         const result = await this._hass.callWS({
           type: "smart_shutter/save_own_area_schedules",
@@ -6861,24 +7513,34 @@
         if (result.success) {
           await this._loadBackendConfig();
           this._haptic("success");
+          if (autosave) {
+            if (statusEl) statusEl.textContent = this._language() === "de" ? "Gespeichert." : "Saved.";
+            return true;
+          }
           this._editingScheduleId = null;
           this._exitEditor("settings-area-edit");
           this._render();
-          return;
+          return true;
         }
         if (result.conflicts && result.conflicts.length) {
           this._haptic("warning");
+          const accepted = (this._backendConfig && this._backendConfig.schedule_conflicts) || {};
+          const onlyExisting = result.conflicts.every((conflict) =>
+            conflict.overlapping_with.every((other) => (accepted[conflict.rule_id] || []).includes(other.id)));
+          if (autosave && onlyExisting) return this._submitAreaSchedules(areaId, schedules, true, statusEl, true);
           const names = result.conflicts
             .flatMap((c) => c.overlapping_with.map((o) => o.name))
             .join(", ");
-          if (
+          if (!autosave &&
             window.confirm(
               this._message("confirmScheduleConflict", names)
             )
           ) {
-            await this._submitAreaSchedules(areaId, schedules, true, statusEl);
+            return this._submitAreaSchedules(areaId, schedules, true, statusEl);
           }
-          return;
+          if (statusEl) statusEl.textContent = this._message("confirmScheduleConflict", names);
+          this._ruleConflict = true;
+          return false;
         }
         if (result.validation_error) {
           this._haptic("failure");
@@ -6889,9 +7551,11 @@
           };
           if (statusEl) statusEl.textContent = messages[result.validation_error] || this._message("invalidInput");
         }
+        return false;
       } catch (err) {
         this._haptic("failure");
         if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        return false;
       }
     }
 
@@ -6991,11 +7655,11 @@
       `;
       html += `</div>`;
       html += `<button class="save-btn" data-save-trigger>Save</button>`;
-      html += `<span class="save-status" data-save-status></span>`;
+      html += `<span class="save-status" data-save-status role="status" aria-live="polite"></span><button type="button" data-rule-retry hidden>${this._language() === "de" ? "Erneut versuchen" : "Retry"}</button>`;
       return html;
     }
 
-    async _submitTriggers(triggers, statusEl) {
+    async _submitTriggers(triggers, statusEl, autosave = false) {
       try {
         const result = await this._hass.callWS({
           type: "smart_shutter/save_external_triggers",
@@ -7004,10 +7668,14 @@
         if (result.success) {
           await this._loadBackendConfig();
           this._haptic("success");
+          if (autosave) {
+            if (statusEl) statusEl.textContent = this._language() === "de" ? "Gespeichert." : "Saved.";
+            return true;
+          }
           this._editingTriggerId = null;
           this._exitEditor("settings-triggers");
           this._render();
-          return;
+          return true;
         }
         if (result.validation_error) {
           this._haptic("failure");
@@ -7018,13 +7686,17 @@
           };
           if (statusEl) statusEl.textContent = messages[result.validation_error] || this._message("invalidInput");
         }
+        return false;
       } catch (err) {
         this._haptic("failure");
         if (statusEl) statusEl.textContent = this._message("errorPrefix") + (err && err.message ? err.message : String(err));
+        return false;
       }
     }
 
-    async _saveTrigger() {
+    async _saveTrigger(autosave = false) {
+      if (!autosave && this._ruleSaveInFlight) return false;
+      const generation = this._ruleEditorGeneration;
       const body = this.shadowRoot.querySelector(".body");
       const statusEl = body.querySelector("[data-save-status]");
       const triggers = [...((this._backendConfig && this._backendConfig.external_triggers) || [])];
@@ -7038,14 +7710,18 @@
       const targetModeEl = body.querySelector("[data-trigger-target-mode]");
       const targetMode = targetModeEl ? targetModeEl.value : "entity";
       const trigger = {
-        id: editingId || "",
+        id: editingId || this._newRuleId("trigger_"),
         name: field("name").trim(),
         entity_id: targetMode === "entity" ? field("entity_id") : null,
         area_id: targetMode === "area" ? field("area_id") : null,
         action: field("action"),
       };
-      const others = editingId ? triggers.filter((t) => t.id !== editingId) : triggers;
-      await this._submitTriggers([...others, trigger], statusEl);
+      const index = triggers.findIndex((t) => t.id === editingId);
+      if (index >= 0) triggers[index] = trigger;
+      else triggers.push(trigger);
+      const saved = await this._submitTriggers(triggers, statusEl, autosave);
+      if (saved && autosave && generation === this._ruleEditorGeneration) this._editingTriggerId = trigger.id;
+      return saved;
     }
 
     async _deleteTrigger(triggerId) {
@@ -7189,6 +7865,56 @@
       }
     }
 
+    _individualSettingsSummary() {
+      const rows = [];
+      for (const s of this._model.shutters) {
+        const e = this._seasonEntities(s.entities);
+        const aspects = [];
+        let hasProfileTime = false;
+        const isLocal = (entry) => {
+          const state = entry && this._state(entry.entity_id);
+          return state && state.state === SOURCE_OPTION_LOCAL;
+        };
+        for (const pid of this._profileIds(s)) {
+          const sources = e.profileTimeSource[pid] || {};
+          const directions = ["open", "close"].filter((action) => isLocal(sources[action]));
+          if (directions.length) {
+            hasProfileTime = true;
+            aspects.push(`${this._profileLabel(pid, s)}: ${directions.map((action) => this._exceptionText(action === "open" ? "Öffnen" : "Schließen", action === "open" ? "Open" : "Close")).join("/")}`);
+          }
+        }
+        for (const [sources, label] of [
+          [e.sourceSelect, this._exceptionText("Trigger/Sonnenversatz", "Trigger/sun offset")],
+          [e.positionSourceSelect, this._exceptionText("Zielposition", "Target position")],
+        ]) {
+          const directions = ["open", "close"].filter((action) => isLocal(sources[action]));
+          if (directions.length) aspects.push(`${label}: ${directions.map((action) => this._exceptionText(action === "open" ? "Öffnen" : "Schließen", action === "open" ? "Open" : "Close")).join("/")}`);
+        }
+        if (aspects.length) rows.push({ shutter: s, aspects, hasProfileTime });
+      }
+      return rows;
+    }
+
+    _individualSettingsSignature(rows) {
+      return JSON.stringify([this._language(), rows.map(({ shutter, aspects, hasProfileTime }) =>
+        [shutter.deviceId, shutter.name, aspects, hasProfileTime])]);
+    }
+
+    _renderIndividualSettingsSummary(rows = this._individualSettingsSummary()) {
+      this._individualSummarySignature = this._individualSettingsSignature(rows);
+      const title = this._exceptionText("Individuelle Rollladen-Einstellungen", "Individual shutter settings");
+      const section = this._sectionToggle("global-individual-settings", `${title} (${rows.length})`, false);
+      let html = section.headerHtml;
+      if (section.isOpen) {
+        html += rows.length ? `<div class="individual-settings-summary">${rows.map(({ shutter, aspects, hasProfileTime }) => `
+          <div class="list-item">
+            <div class="main"><div class="name">${this._escapeHtml(shutter.name)}</div><div class="meta">${aspects.map((aspect) => this._escapeHtml(aspect)).join(" · ")}</div></div>
+            <button class="link-btn" type="button" data-override-detail="${this._escapeHtml(shutter.deviceId)}" data-override-tab="${hasProfileTime ? "basic" : "advanced"}">${this._exceptionText("Zum Rollladen", "Go to shutter")}</button>
+          </div>`).join("")}</div>` : `<p class="hint">${this._exceptionText("Keine individuellen Fahrzeit-, Trigger- oder Positionswerte eingestellt.", "No individual time, trigger, or position values set.")}</p>`;
+      }
+      return html;
+    }
+
     _renderSettingsGlobal() {
       let html = `<button class="back" data-settings-back><ha-icon icon="mdi:arrow-left"></ha-icon> Back to Settings Menu</button>`;
       const e = this._seasonEntities(this._model.globalEntities);
@@ -7210,6 +7936,7 @@
         </tr>`;
       }
       html += `</table>`;
+      html += `<div data-individual-settings-summary>${this._renderIndividualSettingsSummary()}</div>`;
 
       html += `<h3>Global trigger type &amp; sun offset</h3>`;
       html += this._renderSelect(e.localType.open, "Typ Öffnen");

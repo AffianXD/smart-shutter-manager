@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.32.0
+
+- Automatically save valid global and area settings, temporal exceptions, global recurring profiles, external triggers, shortcuts, and shutter notes after a short pause. Keep drafts available on validation or save errors, offer retry, and preserve ordering, conflict checks, explicit apply actions, and confirmed deletion.
+- Reorganize settings by task, move the setup guide under help, and show the scope of settings pages without changing their storage or precedence.
+- Show shutters with individual time, trigger, sun-offset, or position settings under global times, with direct links to each shutter. Describe area values as templates that copy only when explicitly applied, retaining confirmation before overwriting individual settings.
+
 ## v0.31.0
 
 - Select registered notification services using Home Assistant's native service picker in global, area, and shutter settings. Retain saved recipients and show unavailable services without overwriting them; keep notification inheritance and independent closing warnings unchanged.

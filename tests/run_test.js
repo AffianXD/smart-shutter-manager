@@ -35,6 +35,8 @@ async function main() {
     }
     window.__serviceCalls = [];
     window.__shortcutSaveEntryIds = [];
+    window.__delayAreaSave = false;
+    window.__areaSaveDelayEntered = false;
     const states = fx.states;
     const hass = {
       states,
@@ -67,6 +69,11 @@ async function main() {
           return { success: true, shortcuts: msg.shortcuts };
         }
         if (msg.type === "smart_shutter/save_custom_areas") {
+          if (window.__delayAreaSave) {
+            window.__delayAreaSave = false;
+            window.__areaSaveDelayEntered = true;
+            await new Promise((resolve) => setTimeout(resolve, 300));
+          }
           for (const a of msg.areas) if (!a.id) a.id = "area_" + Math.random().toString(16).slice(2, 8);
           window.__customAreas = msg.areas;
           return { success: true };
@@ -420,18 +427,20 @@ async function main() {
     root.querySelector('[data-shortcut-edit="__new__"]').click();
     root.querySelector('[data-shortcut-field="name"]').value = "Test shortcut";
     root.querySelector('[data-shortcut-field="icon"]').value = "mdi:weather-sunny";
-    root.querySelector('[data-shortcut-save]').click();
+    root.querySelector('[data-shortcut-field="name"]').dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await page.waitForTimeout(150);
+  await page.waitForFunction(() => window.__homeShortcuts?.length === 4 &&
+    document.getElementById("card").shadowRoot.querySelector("[data-shortcut-status]")?.textContent === "Gespeichert.");
   const shortcutActionChange = await page.evaluate(() => window.__shortcutActionAfterTypeChange);
   check("Startseiten-Shortcuts: Typwechsel setzt unzulässige Aktion zurück", shortcutActionChange.value === "open" && !shortcutActionChange.hasStop);
   const customShortcutSaved = await page.evaluate(() => {
     const card = document.getElementById("card");
     return window.__homeShortcuts.length === 4 && window.__homeShortcuts.at(-1).icon === "mdi:weather-sunny" &&
-      card._view === "settings-shortcuts" &&
+      card._view === "settings-shortcut-edit" &&
+      !card.shadowRoot.querySelector("[data-shortcut-save]") &&
       window.__shortcutSaveEntryIds.at(-1) === "test-entry";
   });
-  check("Startseiten-Shortcuts: neuen Shortcut in der HA-Instanz-Konfiguration speichern", customShortcutSaved);
+  check("Startseiten-Shortcuts: neuen Shortcut automatisch ohne manuellen Speicherbutton speichern", customShortcutSaved);
   check("Startseiten-Shortcuts: MDI-Icon als auswählbarer Home-Assistant-Picker", await page.evaluate(() => window.__shortcutIconPickerTag === "HA-ICON-PICKER"));
   await page.evaluate(() => {
     const root = document.getElementById("card").shadowRoot;
@@ -590,8 +599,17 @@ async function main() {
     document.getElementById("card").shadowRoot.querySelector('[data-nav="settings"]').click();
   });
   await page.waitForTimeout(100);
+
+  const setupHelpAlignment = await page.evaluate(() => {
+    const root = document.getElementById("card").shadowRoot;
+    const label = root.querySelector(".settings-help span").getBoundingClientRect();
+    const link = root.querySelector(".settings-help .ssm-link-btn").getBoundingClientRect();
+    return Math.abs((label.top + label.height / 2) - (link.top + link.height / 2));
+  });
+  check("Settings: Einrichtungsleitfaden-Link steht bündig neben der Beschriftung", setupHelpAlignment < 1);
+
   await page.evaluate(() => {
-    document.getElementById("card").shadowRoot.querySelector('[data-settings-nav="settings-exceptions"]').click();
+    document.getElementById("card").shadowRoot.querySelector('[data-settings-nav="settings-times"]').click();
     document.getElementById("card").shadowRoot.querySelector('[data-settings-nav="settings-schedules"]').click();
   });
   await page.waitForTimeout(100);
@@ -848,16 +866,28 @@ async function main() {
   const applyBtnExists = await page.evaluate(() => !!document.getElementById("card").shadowRoot.querySelector("[data-area-apply]"));
   check("Bereiche: 'Auf Mitglieder anwenden'-Button erscheint bei bestehendem Bereich", applyBtnExists);
 
+  await page.evaluate(() => { window.__delayAreaSave = true; });
+  await page.locator('[data-sun-direction-select]').selectOption("east");
+  await page.waitForFunction(() => window.__areaSaveDelayEntered);
+  await page.locator('[data-sun-direction-select]').selectOption("west");
+  await page.locator('[data-save-status]').filter({ hasText: "Automatisch gespeichert" }).waitFor();
+  const compassState = await page.evaluate(() => window.__customAreas.find((area) => area.name === "Hinten"));
+  check("Bereiche: neuer Kompassentwurf überlebt eine verspätete ältere Antwort",
+    compassState.sun_azimuth_from === 225 && compassState.sun_azimuth_to === 315);
+
   const callsBeforeApply = (await page.evaluate(() => window.__serviceCalls)).length;
+  await page.locator('[data-area-field="close_sun_offset"]').fill("25");
   await page.evaluate(() => {
     document.getElementById("card").shadowRoot.querySelector("[data-area-apply]").click();
   });
-  await page.waitForTimeout(100);
+  await page.waitForFunction(() => window.__serviceCalls.some((call) =>
+    call.domain === "number" && call.data.entity_id === "number.testroom_close_sun_offset" && call.data.value === 25));
+  await page.locator('[data-save-status]').filter({ hasText: "Automatisch gespeichert" }).waitFor();
   calls = (await page.evaluate(() => window.__serviceCalls)).slice(callsBeforeApply);
   const offsetApplyCalls = calls.filter(
-    (c) => c.domain === "number" && c.data.entity_id === "number.testroom_close_sun_offset" && c.data.value === 20
+    (c) => c.domain === "number" && c.data.entity_id === "number.testroom_close_sun_offset" && c.data.value === 25
   );
-  check("Bereiche: 'Anwenden' setzt den Sonnenversatz beim Mitglied korrekt", offsetApplyCalls.length >= 1);
+  check("Bereiche: 'Anwenden' speichert den laufenden Entwurf und setzt den aktuellen Sonnenversatz beim Mitglied", offsetApplyCalls.length >= 1);
   // Regressionstest fuer den Bug "Bereich zeigt trotzdem den globalen
   // Sonnenversatz": open_source/close_source steuert Typ UND
   // Sonnenversatz gemeinsam - muss auch OHNE close_type-Override auf
@@ -978,6 +1008,60 @@ async function main() {
   });
   check("English card: dynamic notices use English", messages.en[0].includes("source: Guest") && messages.en[1].startsWith("Please"));
   check("German card: dynamic notices use German", messages.de[0].includes("Quelle: Gast") && messages.de[1].startsWith("Für"));
+
+  const individualSummary = await page.evaluate(() => {
+    const card = document.getElementById("card");
+    card._view = "settings-global";
+    card._areaSectionExpanded["global-individual-settings"] = false;
+    card._optimisticState = {};
+    for (const [id, state] of Object.entries(window.__hass.states)) {
+      if (id.endsWith("_source") && state.attributes.options?.includes("global")) state.state = "global";
+    }
+    card._render();
+    const body = card.shadowRoot.querySelector(".body");
+    const emptyCount = body.querySelector('[data-toggle-area-section="global-individual-settings"]').textContent;
+    window.__hass.states["select.testroom_open_werktag_time_source"].state = "local";
+    window.__hass.states["select.testroom_close_source"].state = "local";
+    window.__hass.states["select.testroom_open_position_source"].state = "local";
+    card._render();
+    const toggle = body.querySelector('[data-toggle-area-section="global-individual-settings"]');
+    const collapsed = !body.querySelector("[data-override-detail]");
+    toggle.click();
+    const row = body.querySelector(".individual-settings-summary .list-item");
+    const result = { emptyCount, collapsed, count: toggle.textContent, row: row && row.textContent,
+      links: body.querySelectorAll("[data-override-detail]").length };
+    body.querySelector("[data-override-detail]").click();
+    result.target = [card._view, card._detailDeviceId, card._detailTab];
+    return result;
+  });
+  check("Individuelle Übersicht: null Einträge bei ausschließlich globalen Quellen", individualSummary.emptyCount.includes("(0)"));
+  check("Individuelle Übersicht: eingeklappt, ein Rollladen und konkrete Aspekte", individualSummary.collapsed && individualSummary.count.includes("(1)") && individualSummary.links === 1 && individualSummary.row.includes("Testrollladen") && individualSummary.row.includes("Öffnen") && individualSummary.row.includes("Trigger/Sonnenversatz") && individualSummary.row.includes("Zielposition"));
+  check("Individuelle Übersicht: Direktlink öffnet Rollladen-Fahrzeiten", individualSummary.target[0] === "detail" && individualSummary.target[1] === "dev_testroom" && individualSummary.target[2] === "basic");
+
+  const summaryAfterSourceRemoval = await page.evaluate(() => {
+    const card = document.getElementById("card");
+    card._view = "settings-global";
+    card._render();
+    window.__hass.states["select.testroom_open_werktag_time_source"].state = "global";
+    window.__hass.states["select.testroom_close_source"].state = "global";
+    window.__hass.states["select.testroom_open_position_source"].state = "global";
+    card.hass = { ...window.__hass, states: { ...window.__hass.states } };
+    const body = card.shadowRoot.querySelector(".body");
+    return {
+      count: body.querySelector('[data-toggle-area-section="global-individual-settings"]').textContent,
+      links: body.querySelectorAll("[data-override-detail]").length,
+    };
+  });
+  check("Individuelle Übersicht: entfernte Quellen verschwinden ohne Navigation", summaryAfterSourceRemoval.count.includes("(0)") && summaryAfterSourceRemoval.links === 0);
+
+  const areaTemplateHelp = await page.evaluate(() => {
+    const card = document.getElementById("card");
+    card._view = "settings-area-edit";
+    card._editingAreaId = (window.__customAreas || [])[0]?.id;
+    card._render();
+    return card.shadowRoot.querySelector(".body").textContent;
+  });
+  check("Bereichsvorlage: Kopie beim Anwenden und spätere Unabhängigkeit erklärt", areaTemplateHelp.includes("Bereichsvorlage") && areaTemplateHelp.includes("individuellen Einstellungen") && areaTemplateHelp.includes("nicht automatisch"));
 
   if (process.env.AUDIT_LOCALE) {
     const leftovers = await page.evaluate(() => {

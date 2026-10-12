@@ -17,6 +17,7 @@ playwright-report/
 *.log
 docs/*
 !docs/local-home-assistant.md
+!docs/settings-navigation.md
 .runtime/
 .env
 .env.local
