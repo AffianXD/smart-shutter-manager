@@ -1,204 +1,135 @@
+<img src="assets/icon.svg" alt="Smart Shutter Manager icon" width="80" height="80">
+
 # Smart Shutter Manager
 
-Smart Shutter Manager is a custom integration for Home Assistant that schedules
-and controls existing `cover` entities. It includes a dashboard card, schedule
-profiles, sun position rules, frost protection, notifications, and area based
-settings. It does not replace the cover integration for your devices.
+Smart Shutter Manager is a custom Home Assistant integration for scheduling
+and managing your existing `cover` entities. Set shared routines, adjust
+individual shutters, and preview upcoming movements from one dashboard
+without building a separate automation for every shutter.
 
-> **Release status:** v0.28.1 is being prepared. The repository history was
-> reconstructed from v0.20.2 after a workspace reset. Local regression tests
-> pass; public CI and installation smoke checks remain pending.
+## Features
 
-## Requirements
+- **Flexible schedules:** weekday, weekend, and holiday times, recurring custom
+  profiles, opening at sunrise and closing at sunset with offsets, and optional
+  summer/winter profiles that switch with daylight saving time.
+- **Individual and area settings:** override shared times and target positions,
+  group shutters into areas, and apply area presets.
+- **Everyday adjustments:** skip or postpone the next action, pause after
+  detected manual movement, or set date-based pauses and alternate times.
+- **Sun and frost rules:** set area-specific positions based on the sun's
+  azimuth and elevation; block scheduled movements when frost is detected.
+- **Notifications:** movement and frost messages, configurable pre-close
+  warnings, and recipients per shutter or area.
+- **Built-in interface:** sidebar panel, dashboard card, guided setup, and a
+  seven-day preview, with English and German translations.
 
-- Home Assistant 2026.3.0 or newer (the intended minimum; compatibility is a
-  release gate).
-- Existing `cover` entities that support **open, close, and stop**. Covers
-  without all three capabilities do not appear in the setup selection.
-- A backup of your Home Assistant configuration before upgrading from v0.20.x.
+## Installation
 
-## Install
+### Requirements
 
-### HACS custom repository
+- Home Assistant **2026.3.0 or newer**, as declared in the HACS metadata.
+- Existing `cover` entities that support **open, close, and stop**. Smart Shutter
+  Manager uses your existing device integrations.
+- For sun-position rules: the Home Assistant Sun integration (`sun.sun`).
+  Partial target positions and sun-position rules also need cover position control.
 
-1. In HACS, open the menu and select **Custom repositories**.
-2. Add `https://github.com/AffianXD/smart-shutter-manager` as an **Integration**.
-3. Install Smart Shutter Manager and restart Home Assistant.
-4. Go to **Settings → Devices & services → Add integration** and select
-   **Smart Shutter Manager**.
+### Install with HACS
 
-This repository is planned for HACS custom repository use. It is not yet listed
-in the HACS default catalog.
+With [HACS](https://github.com/hacs/integration) installed:
 
-When this repository is tracked and installed through HACS, HACS provides a
-native update entity in Home Assistant and can install the update from there.
-Restart Home Assistant after updating the integration. A manually copied
-installation that is not tracked by HACS does not get this update entity.
+1. Open **HACS → ⋮ → Custom repositories**.
+2. Add `https://github.com/AffianXD/smart-shutter-manager` with type
+   **Integration**.
+3. Find **Smart Shutter Manager** in HACS and download it.
+4. Restart Home Assistant.
+5. Go to **Settings → Devices & services → Add integration**, select
+   **Smart Shutter Manager**, and choose the covers to manage.
 
-### Manual install
+The dashboard card is included. Restart Home Assistant after HACS updates.
 
-Copy this repository's `custom_components/smart_shutter` directory to
-`<HA config>/custom_components/smart_shutter`, then restart Home Assistant and
-add the integration from **Settings → Devices & services**.
+<details>
+<summary>Manual installation</summary>
 
-## First use
+Copy `custom_components/smart_shutter` from this repository into
+`<HA config>/custom_components/smart_shutter`. Restart Home Assistant, then add
+**Smart Shutter Manager** under **Settings → Devices & services**.
 
-1. During integration setup, select the covers to manage.
-2. Open **Shutters** in the Home Assistant sidebar. The first-run wizard lets
-   you enter weekday, weekend, and holiday times in place, choose fixed times
-   or sunrise/sunset triggers, and set target positions. The integration also
-   provides `custom:smart-shutter-card` for a regular dashboard.
-3. Optionally select a holiday entity and assign shutters to areas. Review the
-   seven-day preview before choosing whether to enable opening and closing.
-   **Both automations start disabled on a new setup.** Default times are
-   07:00/21:30 on weekdays, 08:30/22:30 on weekends, and 09:00/22:00 on holidays.
-4. Per-shutter settings, custom profiles, external triggers, and notifications
-   remain available in the card's Settings. After setup, the guide stays
-   available for reviewing the schedule and preview.
+</details>
 
-The integration serves its bundled card at
-`/smart_shutter_frontend/smart-shutter-card.js` and tries to register it as a
-dashboard resource automatically. If the card is unavailable, open Home
-Assistant's **Settings → Dashboards → Resources**, add that URL as a
-**JavaScript module**, then add a manual dashboard card with:
+## Getting started
+
+1. Open **Shutters** in the Home Assistant sidebar.
+2. Follow the setup guide to choose fixed times or sunrise/sunset triggers,
+   adjust target positions, and optionally configure a holiday entity and areas.
+3. Review the **seven-day preview**, then choose whether to enable opening,
+   closing, or both and finish setup. **Both global automation switches start
+   disabled on a new installation.**
+
+For example, open at **07:00 on weekdays** and **08:30 on weekends**, then close
+at **sunset**. Override a bedroom's opening time in its individual settings, or
+postpone its next closing from the dashboard.
+
+Use the dashboard to control shutters and adjust their settings. Administrators
+can add, remove, or rename shutters under **Settings → Manage shutters**; removal
+clears their Smart Shutter configuration while preserving the original covers.
+Configure notification recipients and other optional rules in **Settings**.
+
+### Use the card on another dashboard
+
+Add a manual card with:
 
 ```yaml
 type: custom:smart-shutter-card
 ```
 
-YAML-managed dashboards also need this resource registered manually. Restart
-Home Assistant after installing or replacing the integration.
+The integration attempts to register its JavaScript resource automatically for
+dashboards managed through the UI.
 
-## Notifications
+<details>
+<summary>If the card does not load, or you use YAML dashboards</summary>
 
-Set a global notification service in the card's basic settings, or leave it
-empty and configure recipients only for selected areas or shutters. Each area
-and each shutter's Basic tab offers **Inherit**, **Off**, and **Custom recipient**.
-Custom recipients use a registered `notify.*` service, such as
-`notify.mobile_app_phone`.
+Under **Settings → Dashboards → Resources** (available in advanced mode), add
+`/smart_shutter_frontend/smart-shutter-card.js` as a **JavaScript module**.
 
-Individual shutter settings take priority over area settings, followed by the
-global recipient. A shutter with its own recipient can still send notifications
-when its area is Off. With multiple assigned areas, the first explicit area
-setting in assignment order wins for movement, frost, and pre-close messages.
-Sun rules use the triggering area's setting and group notifications by recipient;
-names and counts include only that recipient's enabled shutters.
+For YAML-managed resources, add this entry to your dashboard resource list:
 
-These settings apply to existing movement and frost messages, pre-close warnings,
-and enabled sun rule messages. The configured warning lead time and the sun rule
-notification toggles still apply. Existing area recipients continue to work.
+```yaml
+- url: /smart_shutter_frontend/smart-shutter-card.js
+  type: module
+```
 
-## What it does
+The integration serves this file directly; do not copy it into `config/www`.
+Refresh your browser after updates; clear its cache if the old card persists.
 
-- Schedule opening and closing by weekday, weekend, holiday, or custom profile.
-- Use fixed times or sunrise and sunset with offsets.
-- Override settings per shutter or area and preview upcoming actions.
-- Pause automation after manual movement; apply frost and position limits.
-- Set external trigger times from automations and route notifications per area.
-- Give a non-admin user access to an assigned area in the bundled card.
+</details>
 
-Area access controls the integration's card and WebSocket data. Actual shutter
-movement uses Home Assistant's native `cover.*` services. Configure Home
-Assistant user and entity permissions separately before giving guests access.
+<details>
+<summary>Area access for non-admin users</summary>
 
-## Configure and use
+Area assignments restrict the card and its WebSocket data. Actual cover control
+uses Home Assistant's native services and permissions, which must be configured
+separately.
 
-**Settings → Temporal exceptions** lets you pause automatic opening, closing,
-or both, or set different movement times for a date range. Select individual
-shutters or areas; area rules follow current membership. Both dates are included
-and use Home Assistant's time zone. Empty time fields keep the existing schedule.
-Pauses also block external triggers, postponed actions, and sun position movements
-in the paused direction; manual cover control remains available. After the end
-date, the normal schedule resumes without catching up skipped movements.
-Overlapping pauses combine; overlapping alternate times for the same action and
-shutters are rejected. Existing custom profiles remain under **Recurring time
-profiles**. Exceptions can also be created in shutter and area details. Guests
-can manage exceptions for one assigned area at a time. Up to ten of the most
-recently expired rules remain available to reactivate; older entries are pruned.
+</details>
 
-Open the bundled card to edit schedules, areas, triggers, and per-shutter
-settings. Administrators can add or remove managed shutters under **Smart Shutter
-→ Settings → Manage shutters**, or through the integration's **Configure →
-Manage shutters** dialog. Selected covers are managed; deselect a cover to stop
-managing it. The card also lets you rename shutters in the same view. Selection
-changes save automatically; name changes save after a short typing pause.
-Removing a shutter requires confirmation. The card shows the save status and
-offers a retry if saving fails. Changes reload the integration. Removing a
-shutter deletes its
-Smart Shutter device, generated entities, and cover-specific configuration;
-the original cover entity remains available. Retained shutters keep their
-settings, and temporarily missing shutters remain selectable. The standard
-Home Assistant entities and service actions remain available for automations.
-See the reconstructed [development history](HISTORY.md) for past releases.
-The current service action names are `skip_action`,
-`postpone_action`, `clear_override`, `clear_manual_pause`, and
-`set_external_trigger` under the `smart_shutter` domain.
+## Documentation and support
 
-The card follows the Home Assistant UI language for English and German, with
-English as the fallback. Home Assistant configuration flows and entity labels
-also have English and German translations. Backend notification text and
-next-action sensor text follow the configured Home Assistant language. Custom
-notification templates are preserved; `action` and `trigger` are display text,
-while `action_raw` and `trigger_raw` provide the original values for template
-comparisons (`trigger_raw` is available for movement notifications).
+- [Changelog](CHANGELOG.md) — release notes and feature details.
+- [Migration guide](MIGRATION.md) — read before upgrading from v0.20.x; back up
+  Home Assistant and update automations using the old states or attributes.
+- [Service actions](custom_components/smart_shutter/services.yaml) — fields for
+  skipping, postponing, clearing overrides/pauses, and setting external triggers.
+- [Development history](HISTORY.md) — earlier versions.
+- [Issue tracker](https://github.com/AffianXD/smart-shutter-manager/issues) —
+  include your Home Assistant and integration versions and reproduction steps.
 
-In a shutter's **Advanced → Notifications** settings, scheduled pre-close
-warnings independently inherit the global lead time, switch off, or use a
-custom time of 1–1440 minutes. Recipient settings still apply to every message;
-switching off only the warning leaves movement and other messages enabled.
-Existing configurations inherit the global warning time automatically.
+## Contributing
 
-Movement notifications summarize unique commanded shutters per recipient and
-direction during the five-second batching window. “All shutters” and complete
-area names require coverage of every managed member, including members whose
-notifications are disabled. Skipped or later movements cannot complete an
-earlier summary. The additional template variables `summary` and `motion`
-describe this coverage and the commanded movement; service execution does not
-confirm an end position. Existing custom templates keep their original variables.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+Python/JavaScript checks and release rules, and the
+[local Home Assistant guide](docs/local-home-assistant.md) for Docker development
+with virtual shutters.
 
-### Summer and winter profiles
+## License
 
-Enable **Switch automatically with daylight saving time** under the card's
-**Settings → Basic Settings**, or in the integration's **Configure → Basic
-Settings** dialog. This optional feature starts disabled. First activation copies
-your existing times, trigger types, offsets, and global/individual choices into
-both profiles.
-
-In **Global Entities** and each shutter's settings, select **Summer time** or
-**Winter time** to edit that profile. The active profile is shown separately;
-editing the other profile does not activate it. Each season retains weekday,
-weekend, and holiday times, plus opening/closing trigger types and sun offsets.
-Individual time sources and trigger sources can differ between seasons.
-Positions remain shared. Area presets apply to the currently active season.
-
-The automatic choice uses the configured Home Assistant timezone: daylight
-saving time selects summer, standard time selects winter. Timezones without
-daylight saving time always use winter. No season sensor is required. Custom
-profiles retain their priority and remain season-independent; manual pauses
-and postponed/skipped actions still apply.
-
-Future actions and previews use the season at their execution time, including
-across a clock change. A missing local time during the spring change moves to
-the first valid local minute. A repeated autumn time uses its first occurrence,
-with at most one regular action of each kind per local day. Disabling the
-feature restores the original settings; seasonal entities stay registered to
-retain edits for later reactivation. Existing entity IDs are preserved, and
-seasonal settings have additional native time/select/number entities.
-
-## Upgrading from v0.20.x
-
-Read the [v0.21.0 migration guide](MIGRATION.md) before upgrading.
-Select option states and several data fields now use language neutral keys.
-Saved choices and configuration are migrated, but automations that compare old
-German states or attributes need updating.
-
-## Development and support
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and
-[CHANGELOG.md](CHANGELOG.md) for release notes. Report a reproducible issue
-through the [issue tracker](https://github.com/AffianXD/smart-shutter-manager/issues).
-Local regression checks have passed, while public CI and installation smoke
-tests remain pending before the v0.28.0 release.
-
-Smart Shutter Manager is an independent community project and is not an
-official Home Assistant integration.
+[MIT](LICENSE). Smart Shutter Manager is an independent community project.
