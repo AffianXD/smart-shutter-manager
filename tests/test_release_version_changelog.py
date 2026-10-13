@@ -161,3 +161,58 @@ def test_new_release_changelog_requires_a_change_bullet() -> None:
             _changelog("0.22.0"),
             "## v0.23.0\n\nA paragraph without a change bullet.\n",
         )
+
+
+def test_release_changelog_rejects_unresolved_generated_review_entries() -> None:
+    with pytest.raises(ValueError, match="Review Required"):
+        validate_version_changelog(
+            _manifest("0.22.0"),
+            _manifest("0.23.0"),
+            _changelog("0.22.0"),
+            "## v0.23.0\n\n### Review Required\n\n- [Review required] unclear change.\n",
+        )
+
+
+def test_preparation_can_validate_reviewable_draft_before_editorial_cleanup() -> None:
+    assert validate_version_changelog(
+        _manifest("0.22.0"),
+        _manifest("0.23.0"),
+        _changelog("0.22.0"),
+        "## v0.23.0\n\n### Review Required\n\n- [Review required] unclear change.\n",
+        allow_review_items=True,
+    ) == "0.23.0"
+
+
+def test_release_changelog_rejects_empty_category() -> None:
+    with pytest.raises(ValueError, match="has no entries"):
+        validate_version_changelog(
+            _manifest("0.22.0"),
+            _manifest("0.23.0"),
+            _changelog("0.22.0"),
+            "## v0.23.0\n\n### Added\n\n### Fixed\n\n- A correction.\n",
+        )
+
+
+@pytest.mark.parametrize(
+    ("section", "message"),
+    [
+        (
+            "## v0.23.0\n\n### Added\n\n- Same entry.\n- Same entry.\n",
+            "duplicate release entries",
+        ),
+        (
+            "## v0.23.0\n\n### Added\n\n- First.\n\n### Added\n\n- Second.\n",
+            "duplicate category headings",
+        ),
+    ],
+)
+def test_release_changelog_rejects_duplicate_categories_or_entries(
+    section: str, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_version_changelog(
+            _manifest("0.22.0"),
+            _manifest("0.23.0"),
+            _changelog("0.22.0"),
+            section,
+        )

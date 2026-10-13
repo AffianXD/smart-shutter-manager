@@ -24,3 +24,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: python scripts/check_release_tag.py "$RELEASE_TAG"
+      - name: Verify published GitHub Release
+        if: github.event_name == 'release' && github.event.action == 'published'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/verify_release.py "$RELEASE_TAG"

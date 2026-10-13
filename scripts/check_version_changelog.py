@@ -14,6 +14,14 @@ MANIFEST_PATH = "custom_components/smart_shutter/manifest.json"
 CHANGELOG_PATH = "CHANGELOG.md"
 VERSIONED_DOC_PATHS = {"README.md", "MIGRATION.md", "HISTORY.md"}
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+REVIEW_REQUIRED_HEADING = re.compile(r"^###\s+Review Required\s*$", re.IGNORECASE)
+REVIEW_REQUIRED_MARKER = re.compile(r"\[(?:review required|manual review)\]", re.IGNORECASE)
+PREPARE_RELEASE_MARKER = re.compile(
+    r"\s*<!-- prepare-release:[0-9a-z-]{7,40} -->", re.IGNORECASE
+)
+PREPARE_RELEASE_SOURCE_ID = re.compile(
+    r"<!-- prepare-release:([0-9a-z-]{7,40}) -->", re.IGNORECASE
+)
 BACKFILL_SUBJECT_PATTERN = re.compile(
     r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
     r"(?:\([^)]+\))?!?: backfill v"
@@ -80,11 +88,63 @@ def _require_change_bullet(section: str, heading: str) -> None:
         )
 
 
+def validate_release_notes_complete(section: str) -> None:
+    """Reject generated drafts that still require editorial review."""
+    lines = section.splitlines()
+    if any(REVIEW_REQUIRED_HEADING.fullmatch(line.strip()) for line in lines):
+        raise ValueError(
+            "CHANGELOG.md still has a 'Review Required' section; resolve each "
+            "entry before release."
+        )
+    if any(REVIEW_REQUIRED_MARKER.search(line) for line in lines):
+        raise ValueError(
+            "CHANGELOG.md contains an unresolved review marker; resolve it "
+            "before release."
+        )
+
+    category_headings = [
+        index for index, line in enumerate(lines)
+        if line.startswith("### ")
+    ]
+    category_names = [lines[index][4:].strip().casefold() for index in category_headings]
+    if len(category_names) != len(set(category_names)):
+        raise ValueError("CHANGELOG.md contains duplicate category headings.")
+
+    source_markers = [
+        marker.casefold()
+        for line in lines
+        for marker in PREPARE_RELEASE_SOURCE_ID.findall(line)
+    ]
+    if len(source_markers) != len(set(source_markers)):
+        raise ValueError("CHANGELOG.md contains duplicate release source markers.")
+
+    bullets = [
+        re.sub(r"\s+", " ", PREPARE_RELEASE_MARKER.sub("", line).strip()).casefold()
+        for line in lines
+        if line.lstrip().startswith("- ")
+    ]
+    if len(bullets) != len(set(bullets)):
+        raise ValueError("CHANGELOG.md contains duplicate release entries.")
+
+    for position, start in enumerate(category_headings):
+        end = (
+            category_headings[position + 1]
+            if position + 1 < len(category_headings)
+            else len(lines)
+        )
+        if not any(line.lstrip().startswith("- ") for line in lines[start + 1 : end]):
+            raise ValueError(
+                f"CHANGELOG.md category '{lines[start][4:].strip()}' has no entries."
+            )
+
+
 def validate_version_changelog(
     base_manifest: str | None,
     head_manifest: str,
     base_changelog: str | None,
     head_changelog: str,
+    *,
+    allow_review_items: bool = False,
 ) -> str:
     """Validate a higher version and a new, non-empty changelog section."""
     current_version = _manifest_version(head_manifest, "Updated")
@@ -121,6 +181,8 @@ def validate_version_changelog(
     if not headings or headings[0][0] != section_index:
         raise ValueError(f"CHANGELOG.md must put '{heading}' at the top.")
     _require_change_bullet(section, heading)
+    if not allow_review_items:
+        validate_release_notes_complete(section)
 
     return current_version
 
@@ -174,6 +236,7 @@ def validate_backfill_changelog(
             f"CHANGELOG.md section v{version} must be added or updated in this backfill."
         )
     _require_change_bullet(current_section, f"v{version}")
+    validate_release_notes_complete(current_section)
 
 
 def _git_show(ref: str, path: str) -> str:

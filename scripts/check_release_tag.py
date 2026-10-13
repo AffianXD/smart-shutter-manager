@@ -33,24 +33,31 @@ def _is_newer_version(
     return candidate > previous
 
 
-def _latest_prior_release_tag(
-    current_tag: str,
-) -> tuple[str, tuple[int, int, int]] | None:
-    """Return the highest earlier stable vX.Y.Z tag in the repository."""
-    result = subprocess.run(
-        ["git", "tag", "--list", "v*"],
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-    prior_tags = []
-    for tag in result.stdout.splitlines():
-        if tag == current_tag or not tag.startswith("v"):
-            continue
-        version = _version_tuple(tag[1:])
-        if version is not None:
-            prior_tags.append((tag, version))
-    return max(prior_tags, key=lambda item: item[1], default=None)
+def validate_release_tag(tag: str, version: str, tags: list[str]) -> None:
+    """Validate a stable tag against the manifest and all existing tags."""
+    version_tuple = _version_tuple(version)
+    expected_tag = f"v{version}" if version_tuple is not None else None
+    if expected_tag is None or tag != expected_tag:
+        raise ValueError(
+            f"Release tag {tag!r} must use vX.Y.Z and match the manifest version; "
+            f"expected {expected_tag!r}."
+        )
+
+    prior_tags = [
+        (candidate, parsed)
+        for candidate in tags
+        if candidate != tag
+        and candidate.startswith("v")
+        and (parsed := _version_tuple(candidate[1:])) is not None
+    ]
+    prior_release = max(prior_tags, key=lambda item: item[1], default=None)
+    if prior_release is not None and not _is_newer_version(
+        version_tuple, prior_release[1]
+    ):
+        raise ValueError(
+            f"Release version {version} must be higher than the previous "
+            f"release tag {prior_release[0]}."
+        )
 
 
 def main() -> int:
@@ -59,28 +66,30 @@ def main() -> int:
         return 2
 
     tag = sys.argv[1]
-    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    version = manifest.get("version")
-    version_tuple = _version_tuple(version) if isinstance(version, str) else None
-    expected_tag = f"v{version}" if version_tuple is not None else None
-
-    if expected_tag is None or tag != expected_tag:
-        print(
-            f"Release tag {tag!r} must use vX.Y.Z and match the manifest version; "
-            f"expected {expected_tag!r}.",
-            file=sys.stderr,
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        version = manifest.get("version") if isinstance(manifest, dict) else None
+        if not isinstance(version, str):
+            raise ValueError("Integration manifest must contain a string version.")
+        result = subprocess.run(
+            ["git", "tag", "--list", "v*"],
+            capture_output=True,
+            check=True,
+            text=True,
         )
-        return 1
-
-    prior_release = _latest_prior_release_tag(tag)
-    if prior_release is not None and not _is_newer_version(
-        version_tuple, prior_release[1]
-    ):
-        print(
-            f"Release version {version} must be higher than the previous "
-            f"release tag {prior_release[0]}.",
-            file=sys.stderr,
+        validate_release_tag(tag, version, result.stdout.splitlines())
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        subprocess.CalledProcessError,
+    ) as err:
+        detail = (
+            err.stderr.strip()
+            if isinstance(err, subprocess.CalledProcessError) and err.stderr
+            else str(err)
         )
+        print(f"Release tag check failed: {detail}", file=sys.stderr)
         return 1
 
     print(f"Release tag {tag} matches manifest version {version}.")

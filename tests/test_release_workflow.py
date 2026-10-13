@@ -11,6 +11,7 @@ import yaml
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/validate.yml"
+RELEASE_WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/release-version.yml"
 REPOSITORY = "AffianXD/smart-shutter-manager"
 TARGET = "2f0f5e8ba93ce01594229d284149d3fe3731a6c0"
 
@@ -99,6 +100,15 @@ def test_existing_release_on_later_page_left_unchanged(publication):
     assert "--paginate" in calls[0]
 
 
+def test_repeated_publication_workflow_does_not_create_a_second_release(publication):
+    result, calls = publication("v0.29.0\nv0.28.2")
+
+    assert result.returncode == 0, result.stderr
+    assert "already exists; leaving it unchanged" in result.stdout
+    assert all(call[:2] != ["release", "create"] for call in calls)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("error", [
     "HTTP 401: Bad credentials", "HTTP 403: API rate limit exceeded",
     "HTTP 404: Not Found", "HTTP 500: Server Error", "connection timed out",
@@ -141,8 +151,31 @@ def test_publication_still_requires_all_validation_jobs_and_candidate():
     assert checkout["with"]["persist-credentials"] is False
     step = next(step for step in publish["steps"]
                 if step.get("name") == "Create GitHub release")
+    verify = next(step for step in publish["steps"]
+                  if step.get("name") == "Verify published GitHub release")
     assert step["env"]["RELEASE_TARGET"] == "${{ github.sha }}"
     assert step["env"]["RELEASE_TAG"] == "${{ needs.release-candidate.outputs.tag }}"
+    assert verify["env"]["RELEASE_TAG"] == "${{ needs.release-candidate.outputs.tag }}"
+    assert 'python scripts/verify_release.py "$RELEASE_TAG"' in verify["run"]
+    assert publish["steps"].index(verify) > publish["steps"].index(step)
     candidate = jobs["release-candidate"]["steps"][-1]["run"]
     assert 'python scripts/check_release_tag.py "$RELEASE_TAG"' in candidate
     assert 'if [[ "$TAG_SHA" != "$HEAD_SHA" ]]' in candidate
+
+
+def test_release_workflow_verifies_only_successfully_published_releases():
+    workflow = yaml.safe_load(RELEASE_WORKFLOW.read_text())
+    triggers = workflow.get("on", workflow.get(True))
+    verify_step = next(
+        step for step in workflow["jobs"]["check-version"]["steps"]
+        if step.get("name") == "Verify published GitHub Release"
+    )
+
+    assert "release" in triggers
+    assert "published" in triggers["release"]["types"]
+    assert verify_step["if"] == (
+        "github.event_name == 'release' && github.event.action == 'published'"
+    )
+    assert verify_step["env"]["RELEASE_TAG"] == "${{ github.event.release.tag_name }}"
+    assert 'python scripts/verify_release.py "$RELEASE_TAG"' in verify_step["run"]
+    assert workflow["permissions"]["contents"] == "read"

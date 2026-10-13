@@ -4,9 +4,20 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
 import sys
 
-from scripts.check_version_changelog import ROOT, _section_body, _version_tuple
+from scripts.check_version_changelog import (
+    ROOT,
+    _section_body,
+    _version_tuple,
+    validate_release_notes_complete,
+)
+
+
+_PREPARE_RELEASE_SOURCE = re.compile(
+    r"\s*<!-- prepare-release:[0-9a-z-]{7,40} -->", re.IGNORECASE
+)
 
 
 def release_notes(changelog: str, tag: str) -> str:
@@ -16,7 +27,10 @@ def release_notes(changelog: str, tag: str) -> str:
     body = _section_body(changelog, tag[1:])
     if not body or not body.strip():
         raise ValueError(f"CHANGELOG.md has no non-empty section for {tag}.")
-    return f"## {tag}\n\n{body.strip()}\n"
+    validate_release_notes_complete(body)
+    body = _PREPARE_RELEASE_SOURCE.sub("", body)
+    body = re.sub(r"[ \t]+\n", "\n", body).strip()
+    return f"## {tag}\n\n{body}\n"
 
 
 def main() -> int:

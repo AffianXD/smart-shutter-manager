@@ -26,6 +26,27 @@ def test_exact_version_preserves_nested_sections_and_excludes_neighbors():
     )
 
 
+def test_generated_source_markers_are_removed_from_public_release_notes():
+    changelog = (
+        "## v0.29.0\n\n### Added\n\n"
+        "- Configure a shutter option <!-- prepare-release:012345abcdef -->\n"
+    )
+
+    assert release_notes(changelog, "v0.29.0") == (
+        "## v0.29.0\n\n### Added\n\n- Configure a shutter option\n"
+    )
+
+
+def test_unresolved_generated_review_items_block_release_notes():
+    changelog = (
+        "## v0.29.0\n\n### Review Required\n\n"
+        "- [Review required] unclear changes (`012345abcdef`).\n"
+    )
+
+    with pytest.raises(ValueError, match="Review Required"):
+        release_notes(changelog, "v0.29.0")
+
+
 @pytest.mark.parametrize("tag", ["0.29.0", "v0.29.0-beta", "v00.29.0", "v0.29"])
 def test_invalid_tag_rejected(tag):
     with pytest.raises(ValueError, match="stable vX.Y.Z"):
